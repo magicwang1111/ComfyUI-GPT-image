@@ -3,7 +3,10 @@ import os
 from pathlib import Path
 
 from .api import (
+    API_PROVIDER_OPENAI,
+    API_PROVIDER_OPTIONS,
     BACKGROUND_OPTIONS,
+    DEFAULT_API_PROVIDER,
     DEFAULT_BACKGROUND,
     DEFAULT_BASE_URL,
     DEFAULT_INPUT_FIDELITY,
@@ -17,6 +20,7 @@ from .api import (
     MAX_N,
     MODELS,
     NODE_CATEGORY,
+    OPENAI_BASE_URL,
     OUTPUT_FORMAT_OPTIONS,
     QUALITY_OPTIONS,
     SIZE_PRESETS,
@@ -92,7 +96,41 @@ def _json_value_present(config_data, key):
     return True
 
 
-def _resolve_api_key(config_data):
+def _normalize_api_provider(value):
+    provider = str(value).strip().lower()
+    if provider not in API_PROVIDER_OPTIONS:
+        raise ValueError(f"api_provider must be one of: {', '.join(API_PROVIDER_OPTIONS)}.")
+    return provider
+
+
+def _resolve_api_provider(config_data):
+    if _json_value_present(config_data, "api_provider"):
+        return _normalize_api_provider(config_data["api_provider"])
+
+    if _json_value_present(config_data, "base_url"):
+        configured_base_url = str(config_data["base_url"]).strip().rstrip("/").lower()
+        if configured_base_url.startswith(OPENAI_BASE_URL.lower()):
+            return API_PROVIDER_OPENAI
+        return DEFAULT_API_PROVIDER
+
+    env_provider = _load_env_value("GPT_IMAGE_API_PROVIDER")
+    if env_provider:
+        return _normalize_api_provider(env_provider)
+
+    env_base_url = _load_env_value("GPT_IMAGE_BASE_URL", "OPENAI_BASE_URL")
+    if env_base_url:
+        normalized_url = env_base_url.rstrip("/").lower()
+        if normalized_url.startswith(OPENAI_BASE_URL.lower()):
+            return API_PROVIDER_OPENAI
+        return DEFAULT_API_PROVIDER
+
+    if _load_env_value("OPENAI_API_KEY"):
+        return API_PROVIDER_OPENAI
+
+    return DEFAULT_API_PROVIDER
+
+
+def _resolve_api_key(config_data, api_provider):
     if _json_value_present(config_data, "api_key"):
         return str(config_data["api_key"]).strip()
 
@@ -100,12 +138,18 @@ def _resolve_api_key(config_data):
     if env_api_key:
         return env_api_key
 
+    if api_provider == API_PROVIDER_OPENAI:
+        openai_api_key = _load_env_value("OPENAI_API_KEY")
+        if openai_api_key:
+            return openai_api_key
+
     raise ValueError(
-        "An API key is required. Add api_key to config.local.json or set GPT_IMAGE_API_KEY."
+        "An API key is required. Add api_key to config.local.json, set GPT_IMAGE_API_KEY, "
+        "or set OPENAI_API_KEY for api_provider=openai."
     )
 
 
-def _resolve_base_url(config_data):
+def _resolve_base_url(config_data, api_provider):
     if _json_value_present(config_data, "base_url"):
         return str(config_data["base_url"]).strip().rstrip("/")
 
@@ -113,7 +157,25 @@ def _resolve_base_url(config_data):
     if env_base_url:
         return env_base_url.rstrip("/")
 
+    if api_provider == API_PROVIDER_OPENAI:
+        openai_base_url = _load_env_value("OPENAI_BASE_URL")
+        if openai_base_url:
+            return openai_base_url.rstrip("/")
+        return OPENAI_BASE_URL
+
     return DEFAULT_BASE_URL
+
+
+def _resolve_openai_organization(config_data):
+    if _json_value_present(config_data, "openai_organization"):
+        return str(config_data["openai_organization"]).strip()
+    return _load_env_value("OPENAI_ORGANIZATION")
+
+
+def _resolve_openai_project(config_data):
+    if _json_value_present(config_data, "openai_project"):
+        return str(config_data["openai_project"]).strip()
+    return _load_env_value("OPENAI_PROJECT_ID", "OPENAI_PROJECT")
 
 
 def _resolve_request_timeout(config_data):
@@ -135,10 +197,13 @@ def _resolve_model_name(selected_model, model_override):
 
 def _resolve_runtime_client_kwargs():
     config_data = _load_json_config()
+    api_provider = _resolve_api_provider(config_data)
     return {
-        "api_key": _resolve_api_key(config_data),
+        "api_key": _resolve_api_key(config_data, api_provider),
         "timeout": _resolve_request_timeout(config_data),
-        "base_url": _resolve_base_url(config_data),
+        "base_url": _resolve_base_url(config_data, api_provider),
+        "organization": _resolve_openai_organization(config_data),
+        "project": _resolve_openai_project(config_data),
     }
 
 
@@ -153,7 +218,8 @@ def _create_runtime_async_client():
 def _raise_with_api_guidance(exc):
     if exc.status_code in {401, 403}:
         raise ValueError(
-            f"API request was rejected with {exc.status_code}. Check api_key, base_url, relay permissions, billing, and model."
+            f"API request was rejected with {exc.status_code}. Check api_key, base_url, api_provider, "
+            "OpenAI organization/project headers, billing, and model access."
         ) from exc
 
     if exc.status_code == 429:

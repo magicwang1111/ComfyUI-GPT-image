@@ -12,10 +12,12 @@ nodes = import_module("py.nodes")
 
 
 class FakeResolvedClient:
-    def __init__(self, api_key, timeout=60, base_url=None):
+    def __init__(self, api_key, timeout=60, base_url=None, organization="", project=""):
         self.api_key = api_key
         self.timeout = timeout
         self.base_url = base_url
+        self.organization = organization
+        self.project = project
 
     def close(self):
         pass
@@ -55,6 +57,8 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                         self.assertEqual(client.api_key, "json-key")
                         self.assertEqual(client.timeout, 90)
                         self.assertEqual(client.base_url, "https://json.example.com")
+                        self.assertEqual(client.organization, "")
+                        self.assertEqual(client.project, "")
                         client.close()
 
     def test_env_values_are_used_when_json_missing(self):
@@ -75,6 +79,65 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                         self.assertEqual(client.api_key, "env-key")
                         self.assertEqual(client.timeout, nodes.DEFAULT_REQUEST_TIMEOUT)
                         self.assertEqual(client.base_url, "https://env.example.com")
+                        self.assertEqual(client.organization, "")
+                        self.assertEqual(client.project, "")
+                        client.close()
+
+    def test_openai_provider_uses_openai_defaults_and_env_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "config.local.json"
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "api_provider": "openai",
+                        "request_timeout": 80,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_API_KEY": "openai-env-key",
+                },
+                clear=True,
+            ):
+                with patch.object(nodes, "CONFIG_JSON_PATH", json_path):
+                    with patch.object(nodes, "Client", FakeResolvedClient):
+                        client = nodes._create_runtime_client()
+                        self.assertEqual(client.api_key, "openai-env-key")
+                        self.assertEqual(client.timeout, 80)
+                        self.assertEqual(client.base_url, "https://api.openai.com/v1")
+                        self.assertEqual(client.organization, "")
+                        self.assertEqual(client.project, "")
+                        client.close()
+
+    def test_openai_headers_are_resolved_from_json_or_env(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "config.local.json"
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "api_key": "json-key",
+                        "openai_organization": "org_json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_PROJECT_ID": "proj_env",
+                },
+                clear=True,
+            ):
+                with patch.object(nodes, "CONFIG_JSON_PATH", json_path):
+                    with patch.object(nodes, "Client", FakeResolvedClient):
+                        client = nodes._create_runtime_client()
+                        self.assertEqual(client.organization, "org_json")
+                        self.assertEqual(client.project, "proj_env")
                         client.close()
 
     def test_async_runtime_client_uses_same_resolved_values(self):
@@ -98,6 +161,8 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                         self.assertEqual(client.api_key, "json-key")
                         self.assertEqual(client.timeout, 75)
                         self.assertEqual(client.base_url, "https://json.example.com")
+                        self.assertEqual(client.organization, "")
+                        self.assertEqual(client.project, "")
                         asyncio.run(client.close())
 
     def test_missing_key_raises(self):
@@ -132,6 +197,20 @@ class ClientTransportTests(unittest.TestCase):
             self.assertEqual(client._client.headers.get("Authorization"), "Bearer relay-key")
         finally:
             asyncio.run(client.close())
+
+    def test_client_builds_optional_openai_headers(self):
+        client = client_module.Client(
+            "openai-key",
+            base_url="https://api.openai.com/v1",
+            organization="org_123",
+            project="proj_456",
+        )
+        try:
+            self.assertEqual(client._client.headers.get("Authorization"), "Bearer openai-key")
+            self.assertEqual(client._client.headers.get("OpenAI-Organization"), "org_123")
+            self.assertEqual(client._client.headers.get("OpenAI-Project"), "proj_456")
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
 {
   "api_key": "",
-  "request_timeout": 1200,
-  "base_url": "https://aihubmix.com/v1"
+  "api_provider": "relay",
+  "request_timeout": 600,
+  "base_url": "https://aihubmix.com/v1",
+  "openai_organization": "",
+  "openai_project": ""
 }

@@ -8,14 +8,27 @@ def _build_timeout_config(timeout):
     return httpx.Timeout(connect=10.0, read=timeout, write=timeout, pool=timeout)
 
 
-def _build_headers(api_key):
-    return {
-        "Authorization": f"Bearer {api_key}",
-    }
+def _normalize_optional_header(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _build_headers(api_key, organization="", project=""):
+    headers = {"Authorization": f"Bearer {api_key}"}
+    organization = _normalize_optional_header(organization)
+    project = _normalize_optional_header(project)
+
+    if organization:
+        headers["OpenAI-Organization"] = organization
+    if project:
+        headers["OpenAI-Project"] = project
+
+    return headers
 
 
 class Client:
-    def __init__(self, api_key, timeout=60, base_url=DEFAULT_BASE_URL):
+    def __init__(self, api_key, timeout=60, base_url=DEFAULT_BASE_URL, organization="", project=""):
         api_key = (api_key or "").strip()
         if not api_key:
             raise ValueError("api_key is required.")
@@ -23,11 +36,13 @@ class Client:
         self.api_key = api_key
         self.timeout = timeout
         self.base_url = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
+        self.organization = _normalize_optional_header(organization)
+        self.project = _normalize_optional_header(project)
         timeout_config = _build_timeout_config(timeout)
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=timeout_config,
-            headers=_build_headers(self.api_key),
+            headers=_build_headers(self.api_key, organization=self.organization, project=self.project),
         )
 
     def request(self, method, path, **kwargs):
@@ -54,7 +69,7 @@ class Client:
 
 
 class AsyncClient:
-    def __init__(self, api_key, timeout=60, base_url=DEFAULT_BASE_URL):
+    def __init__(self, api_key, timeout=60, base_url=DEFAULT_BASE_URL, organization="", project=""):
         api_key = (api_key or "").strip()
         if not api_key:
             raise ValueError("api_key is required.")
@@ -62,11 +77,13 @@ class AsyncClient:
         self.api_key = api_key
         self.timeout = timeout
         self.base_url = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
+        self.organization = _normalize_optional_header(organization)
+        self.project = _normalize_optional_header(project)
         timeout_config = _build_timeout_config(timeout)
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=timeout_config,
-            headers=_build_headers(self.api_key),
+            headers=_build_headers(self.api_key, organization=self.organization, project=self.project),
         )
 
     async def request(self, method, path, **kwargs):

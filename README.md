@@ -1,66 +1,125 @@
 # ComfyUI-GPT-image
 
-`ComfyUI-GPT-image` 是一个面向 AIHubMix / OpenAI 兼容图片接口的 ComfyUI 自定义节点包，当前提供两个节点：
+ComfyUI custom nodes for the OpenAI GPT Image API and OpenAI-compatible relay endpoints.
+
+English README. For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
+
+## Nodes
 
 - `ComfyUI-GPT-image Generate`
 - `ComfyUI-GPT-image Edit`
 
-当前版本只覆盖这两类能力：
+## Current scope
 
-- 文生图
-- 图生图
-- 多图参考输入
+Supported:
 
-当前不支持：
+- Text-to-image
+- Image-to-image
+- Multi-image reference input
 
-- mask / inpainting
-- variations
-- Responses API
+Not supported yet:
 
-## 模型列表
+- Mask / inpainting
+- Variations
+- Responses API workflows
 
-节点下拉列表只保留两个模型：
+## API compatibility
+
+This plugin supports both:
+
+- OpenAI official API
+- OpenAI-compatible relay endpoints such as AIHubMix
+
+Both paths use the same Image API routes:
+
+- `POST /v1/images/generations`
+- `POST /v1/images/edits`
+
+## Models exposed in the node UI
 
 - `gpt-image-2`
 - `gpt-image-1.5`
 
-如果中转站后续有别名或灰度模型，可以通过 `model_override` 临时覆盖实际请求的模型名。
+If your relay uses a different model alias, use `model_override` to send the actual model name.
 
-## 安装
+## Installation
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/your-name/ComfyUI-GPT-image.git
+git clone https://github.com/magicwang1111/ComfyUI-GPT-image.git
 cd ComfyUI-GPT-image
 python -m pip install -r requirements.txt
 ```
 
-## 配置
+## Configuration
 
-推荐在仓库根目录创建 `config.local.json`，可以先复制 `config.example.json`：
+Create `config.local.json` in the repo root. You can copy `config.example.json` first.
 
 ```json
 {
   "api_key": "",
+  "api_provider": "relay",
   "request_timeout": 600,
-  "base_url": "https://aihubmix.com/v1"
+  "base_url": "https://aihubmix.com/v1",
+  "openai_organization": "",
+  "openai_project": ""
 }
 ```
 
-配置优先级：
+### Config fields
+
+- `api_key`: API key for either OpenAI or a relay.
+- `api_provider`: `relay` or `openai`.
+- `request_timeout`: Timeout in seconds.
+- `base_url`: API root URL. If omitted, a default is chosen from `api_provider`.
+- `openai_organization`: Optional `OpenAI-Organization` header.
+- `openai_project`: Optional `OpenAI-Project` header.
+
+### Default base URLs
+
+- `api_provider=relay`: `https://aihubmix.com/v1`
+- `api_provider=openai`: `https://api.openai.com/v1`
+
+### Environment variables
+
+Resolution order:
 
 1. `config.local.json`
-2. 环境变量 `GPT_IMAGE_API_KEY` / `GPT_IMAGE_BASE_URL`
-3. 默认值
+2. Environment variables
+3. Built-in defaults
 
-默认值：
+Supported environment variables:
 
-- `base_url`: `https://aihubmix.com/v1`
-- `request_timeout`: `600`
+- `GPT_IMAGE_API_KEY`
+- `GPT_IMAGE_BASE_URL`
+- `GPT_IMAGE_API_PROVIDER`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_ORGANIZATION`
+- `OPENAI_PROJECT_ID`
+- `OPENAI_PROJECT`
 
-`gpt-image-2` 在 2026-04-23 的 AIHubMix relay 实测中响应明显慢于 `gpt-image-1.5`，默认超时建议不要低于 `600` 秒。
+### OpenAI official API example
 
-## 节点参数
+```json
+{
+  "api_key": "sk-...",
+  "api_provider": "openai",
+  "request_timeout": 600,
+  "base_url": "https://api.openai.com/v1",
+  "openai_organization": "",
+  "openai_project": ""
+}
+```
+
+Or use environment variables:
+
+```bash
+set OPENAI_API_KEY=sk-...
+set GPT_IMAGE_API_PROVIDER=openai
+```
+
+## Node parameters
 
 ### Generate
 
@@ -86,82 +145,115 @@ python -m pip install -r requirements.txt
 - `input_fidelity`
 - `model_override`
 
-### size 行为
+## Size behavior
 
-`size` 现在是下拉列表，不再手动输入宽高：
+`size` is a dropdown preset:
 
 - `auto`
 - `1K`
 - `2K`
 - `4K`
 
-实际请求尺寸由节点内部自动换算。
+The node maps these presets to actual API `size` values.
 
-- `gpt-image-1.5`
-  - 只支持 `auto` 和 `1K`
-  - 实际会在 `1024x1024`、`1024x1536`、`1536x1024` 里选最接近输入比例的一档
-- `gpt-image-2`
-  - 支持 `auto`、`1K`、`2K`、`4K`
-  - `1K` 会在 `1024x1024`、`1024x1536`、`1536x1024` 中选最接近输入比例的一档
-  - `2K` 会在 `2048x2048`、`1152x2048`、`2048x1152` 中选最接近输入比例的一档
-  - `4K` 会在 `2880x2880`、`2160x3840`、`3840x2160` 中选最接近输入比例的一档
-  - `auto` 会按输入图原始尺寸自动挑选最合适的 `1K / 2K / 4K` 档，再映射到最近比例
+### `gpt-image-1.5`
 
-没有输入参考图时：
+Supports:
 
-- `Generate` 节点的 `auto` 仍然交给 API 自己决定
-- `Generate` 节点的 `1K / 2K / 4K` 默认用对应档位的方图尺寸
+- `auto`
+- `1K`
 
-## 接口行为
+It resolves to the nearest ratio among:
 
-- `Generate` 使用 `POST /images/generations`
-- `Edit` 使用 `POST /images/edits`
-- 多图编辑请求会按 `image[]` 字段发送，而不是重复 `image`
-- 节点输出：
+- `1024x1024`
+- `1024x1536`
+- `1536x1024`
+
+### `gpt-image-2`
+
+Supports:
+
+- `auto`
+- `1K`
+- `2K`
+- `4K`
+
+Preset mappings:
+
+- `1K`: `1024x1024`, `1024x1536`, `1536x1024`
+- `2K`: `2048x2048`, `1152x2048`, `2048x1152`
+- `4K`: `2880x2880`, `2160x3840`, `3840x2160`
+
+For `Edit`, the node chooses the closest preset size for the input image aspect ratio.
+
+For `auto` on `gpt-image-2`, the node first picks the size tier from the input long edge:
+
+- `<= 1536` -> `1K`
+- `<= 2048` -> `2K`
+- otherwise -> `4K`
+
+Then it maps to the closest legal size inside that tier.
+
+For `Generate` with no input image:
+
+- `auto` is still passed through to the API
+- `1K`, `2K`, and `4K` default to the square size in each tier
+
+## Request behavior
+
+- `Generate` uses `POST /images/generations`
+- `Edit` uses `POST /images/edits`
+- Multi-image edits are sent as `image[]`
+- Node outputs:
   - `image`
   - `response_json`
 
-`response_json` 会保留调试所需的返回结构，但会把 `b64_json` 替换成占位文本，避免输出超大 base64。
+`response_json` keeps the response structure for debugging, but replaces `b64_json` with a placeholder so logs do not explode in size.
 
-## 手动 Probe
+## Capability probe
 
-仓库内置了一个 relay capability probe 脚本：
+The repo includes a probe script for either OpenAI or relay endpoints:
 
 ```bash
-python scripts/probe_aihubmix_capabilities.py --api-key YOUR_KEY
+python scripts/probe_aihubmix_capabilities.py --api-provider openai
+python scripts/probe_aihubmix_capabilities.py --api-provider relay --base-url https://aihubmix.com/v1
 ```
 
-脚本会为每个模型执行：
+It checks:
 
-- 一次文生图验证
-- 一次单图图生图验证
-- 一次多图上限探测
+- One text-to-image request
+- One single-image edit request
+- Multi-image input limit probing
 
-上限探测策略固定为：
+Extra options:
 
-1. 依次测试 `1 / 4 / 8 / 16 / 24`
-2. 出现失败后，在最后成功值和首次失败值之间二分
+- `--api-key`
+- `--api-provider`
+- `--base-url`
+- `--organization`
+- `--project`
+- `--timeout`
+- `--models`
 
-## 已验证结果
+## Verified relay notes
 
-以下结果用于记录当前 relay 的手动验证结论，会随着脚本复测更新：
+Manual relay verification on `2026-04-23` against `https://aihubmix.com/v1`:
 
-- 验证日期：`2026-04-23`
-- Relay：`https://aihubmix.com/v1`
-- 测试条件：`size=1024x1024`、`quality=low`、`background=auto`、`output_format=png`
-- `gpt-image-1.5`
-  - 文生图：成功，HTTP `200`
-  - 单图图生图：成功，HTTP `200`
-  - 多图输入上限探测：`1 / 4 / 8 / 16 / 24` 全部成功
-  - 当前已知结论：`last_success = 24`，`first_failure = null`
-- `gpt-image-2`
-  - 文生图：成功，HTTP `200`
-  - 单图图生图：成功，HTTP `200`
-  - 多图输入上限探测：`1 / 4 / 8 / 16 / 24` 全部成功
-  - 当前已知结论：`last_success = 24`，`first_failure = null`
-- 注意：这组结果只能证明 relay 当前“至少支持 24 张输入图”，并不代表 24 是真实上限。
+### `gpt-image-1.5`
 
-## 测试
+- Generate: HTTP `200`
+- Single-image edit: HTTP `200`
+- Multi-image probe: `1 / 4 / 8 / 16 / 24` all succeeded
+
+### `gpt-image-2`
+
+- Generate: HTTP `200`
+- Single-image edit: HTTP `200`
+- Multi-image probe: `1 / 4 / 8 / 16 / 24` all succeeded
+
+This only proves the relay supported at least 24 input images at that time. It does not prove 24 is the hard limit.
+
+## Tests
 
 ```bash
 python -m unittest discover -s tests -v

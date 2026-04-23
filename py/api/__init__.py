@@ -1,5 +1,9 @@
 from .capabilities import (
+    API_PROVIDER_OPENAI,
+    API_PROVIDER_OPTIONS,
+    API_PROVIDER_RELAY,
     BACKGROUND_OPTIONS,
+    DEFAULT_API_PROVIDER,
     DEFAULT_BACKGROUND,
     DEFAULT_BASE_URL,
     DEFAULT_INPUT_FIDELITY,
@@ -14,6 +18,7 @@ from .capabilities import (
     MODELS,
     NODE_CATEGORY,
     NODE_PREFIX,
+    OPENAI_BASE_URL,
     OUTPUT_FORMAT_OPTIONS,
     QUALITY_OPTIONS,
     get_input_aspect_ratio,
@@ -33,8 +38,12 @@ from .image_generation import (
 
 __all__ = [
     "AsyncClient",
+    "API_PROVIDER_OPENAI",
+    "API_PROVIDER_OPTIONS",
+    "API_PROVIDER_RELAY",
     "BACKGROUND_OPTIONS",
     "Client",
+    "DEFAULT_API_PROVIDER",
     "DEFAULT_BACKGROUND",
     "DEFAULT_BASE_URL",
     "DEFAULT_INPUT_FIDELITY",
@@ -49,6 +58,7 @@ __all__ = [
     "MODELS",
     "NODE_CATEGORY",
     "NODE_PREFIX",
+    "OPENAI_BASE_URL",
     "OUTPUT_FORMAT_OPTIONS",
     "QUALITY_OPTIONS",
     "SIZE_PRESETS",
