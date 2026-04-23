@@ -147,7 +147,27 @@ class NodeExecutionTests(unittest.TestCase):
             )
 
         data, _files = client.edit_calls[0]
-        self.assertEqual(data["size"], "848x1504")
+        self.assertEqual(data["size"], "1024x1536")
+        self.assertTrue(client.closed)
+
+    def test_edit_node_resolves_2k_size_from_input_ratio(self):
+        import torch
+
+        client = FakeAsyncClient()
+        images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
+
+        with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+            asyncio.run(
+                nodes.GPTImageEditNode().generate(
+                    "hello",
+                    images=images,
+                    model="gpt-image-2",
+                    size="2K",
+                )
+            )
+
+        data, _files = client.edit_calls[0]
+        self.assertEqual(data["size"], "1152x2048")
         self.assertTrue(client.closed)
 
 

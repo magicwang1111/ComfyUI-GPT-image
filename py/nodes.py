@@ -19,6 +19,7 @@ from .api import (
     NODE_CATEGORY,
     OUTPUT_FORMAT_OPTIONS,
     QUALITY_OPTIONS,
+    SIZE_PRESETS,
     AsyncClient,
     Client,
     build_edit_request,
@@ -183,7 +184,7 @@ class GPTImageGenerateNode:
             },
             "optional": {
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
-                "size": ("STRING", {"multiline": False, "default": DEFAULT_SIZE}),
+                "size": (SIZE_PRESETS, {"default": DEFAULT_SIZE}),
                 "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
@@ -255,7 +256,7 @@ class GPTImageEditNode:
             },
             "optional": {
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
-                "size": ("STRING", {"multiline": False, "default": DEFAULT_SIZE}),
+                "size": (SIZE_PRESETS, {"default": DEFAULT_SIZE}),
                 "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),

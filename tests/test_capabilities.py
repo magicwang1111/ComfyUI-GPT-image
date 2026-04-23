@@ -43,20 +43,20 @@ class CapabilityTests(unittest.TestCase):
                 input_fidelity="auto",
             )
 
-    def test_gpt_image_2_accepts_custom_size(self):
+    def test_gpt_image_2_accepts_2k_preset(self):
         spec = capabilities.validate_generate_request(
             "gpt-image-2",
             prompt="test",
-            size="2048x1152",
+            size="2K",
         )
         self.assertEqual(spec["label"], "GPT Image 2")
 
-    def test_gpt_image_15_rejects_custom_size(self):
+    def test_gpt_image_15_rejects_2k_preset(self):
         with self.assertRaises(ValueError):
             capabilities.validate_generate_request(
                 "gpt-image-1.5",
                 prompt="test",
-                size="2048x1152",
+                size="2K",
             )
 
     def test_resolve_request_size_maps_gpt_image_15_auto_to_nearest_ratio(self):
@@ -64,10 +64,19 @@ class CapabilityTests(unittest.TestCase):
         size = capabilities.resolve_request_size("gpt-image-1.5", "auto", images=images)
         self.assertEqual(size, "1024x1536")
 
-    def test_resolve_request_size_maps_gpt_image_2_auto_to_valid_custom_size(self):
+    def test_resolve_request_size_maps_gpt_image_2_auto_to_1k_preset_size(self):
         images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
         size = capabilities.resolve_request_size("gpt-image-2", "auto", images=images)
-        self.assertEqual(size, "848x1504")
+        self.assertEqual(size, "1024x1536")
+
+    def test_resolve_request_size_maps_gpt_image_2_2k_to_nearest_ratio(self):
+        images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
+        size = capabilities.resolve_request_size("gpt-image-2", "2K", images=images)
+        self.assertEqual(size, "1152x2048")
+
+    def test_resolve_request_size_maps_gpt_image_2_4k_square_without_images(self):
+        size = capabilities.resolve_request_size("gpt-image-2", "4K")
+        self.assertEqual(size, "2880x2880")
 
 
 if __name__ == "__main__":

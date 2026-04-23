@@ -7,7 +7,8 @@ MODELS = ["gpt-image-2", "gpt-image-1.5"]
 DEFAULT_MODEL = MODELS[0]
 
 DEFAULT_SIZE = "auto"
-GPT_IMAGE_15_SIZE_OPTIONS = ["auto", "1024x1024", "1024x1536", "1536x1024"]
+SIZE_PRESETS = ["auto", "1K", "2K", "4K"]
+GPT_IMAGE_15_SIZE_OPTIONS = ["1024x1024", "1024x1536", "1536x1024"]
 
 GPT_IMAGE_2_MAX_EDGE = 3840
 GPT_IMAGE_2_MIN_PIXELS = 655360
@@ -36,6 +37,18 @@ _GPT_IMAGE_15_SIZE_TO_RATIO = {
     "1536x1024": 1536.0 / 1024.0,
 }
 
+_GPT_IMAGE_2_PRESET_SIZES = {
+    "1K": ["1024x1024", "1024x1536", "1536x1024"],
+    "2K": ["2048x2048", "1152x2048", "2048x1152"],
+    "4K": ["2880x2880", "2160x3840", "3840x2160"],
+}
+
+_SIZE_TO_RATIO = {}
+for _size_list in list(_GPT_IMAGE_2_PRESET_SIZES.values()) + [GPT_IMAGE_15_SIZE_OPTIONS]:
+    for _size_value in _size_list:
+        _width, _height = [int(part) for part in _size_value.split("x")]
+        _SIZE_TO_RATIO[_size_value] = _width / _height
+
 MODEL_SPECS = {
     "gpt-image-2": {
         "label": "GPT Image 2",
@@ -48,7 +61,7 @@ MODEL_SPECS = {
         "supports_edit": True,
         "supports_input_fidelity": True,
         "supports_custom_size": False,
-        "allowed_sizes": GPT_IMAGE_15_SIZE_OPTIONS,
+        "allowed_presets": ["auto", "1K"],
     },
 }
 
@@ -108,20 +121,11 @@ def _parse_size_value(size):
     if normalized == "auto":
         return normalized, None, None
 
-    parts = normalized.split("x")
-    if len(parts) != 2:
-        raise ValueError("size must be 'auto' or look like 'WIDTHxHEIGHT'.")
+    normalized = normalized.upper()
+    if normalized not in SIZE_PRESETS:
+        raise ValueError(f"size must be one of: {', '.join(SIZE_PRESETS)}.")
 
-    try:
-        width = int(parts[0].strip())
-        height = int(parts[1].strip())
-    except ValueError as exc:
-        raise ValueError("size must be 'auto' or look like 'WIDTHxHEIGHT'.") from exc
-
-    if width <= 0 or height <= 0:
-        raise ValueError("size width and height must be greater than 0.")
-
-    return f"{width}x{height}", width, height
+    return normalized, None, None
 
 
 def _is_valid_gpt_image_2_size(width, height):
@@ -146,105 +150,58 @@ def _validate_gpt_image_2_size(width, height):
         )
 
 
+def _choose_nearest_size_by_ratio(size_options, ratio):
+    return min(size_options, key=lambda size: abs(_SIZE_TO_RATIO[size] - ratio))
+
+
 def _resolve_gpt_image_15_auto_size(images):
     ratio = get_input_aspect_ratio(images)
-    return min(_GPT_IMAGE_15_SIZE_TO_RATIO, key=lambda size: abs(_GPT_IMAGE_15_SIZE_TO_RATIO[size] - ratio))
+    return _choose_nearest_size_by_ratio(GPT_IMAGE_15_SIZE_OPTIONS, ratio)
 
+def _resolve_gpt_image_2_preset_size(size_preset, images=None):
+    candidate_sizes = _GPT_IMAGE_2_PRESET_SIZES[size_preset]
+    if images is None:
+        return candidate_sizes[0]
 
-def _candidate_values_around(value):
-    center = max(1, int(round(value / GPT_IMAGE_2_SIZE_STEP)))
-    candidates = set()
-    for offset in range(-2, 3):
-        index = center + offset
-        if index > 0:
-            candidates.add(index * GPT_IMAGE_2_SIZE_STEP)
-    return sorted(candidates)
+    ratio = get_input_aspect_ratio(images)
+    return _choose_nearest_size_by_ratio(candidate_sizes, ratio)
 
 
 def _resolve_gpt_image_2_auto_size(images):
     width, height = _extract_image_dimensions(images)
-    width = float(width)
-    height = float(height)
-
     long_edge = max(width, height)
-    short_edge = min(width, height)
-    if short_edge <= 0:
-        raise ValueError("images must have positive width and height.")
-
-    if (long_edge / short_edge) > GPT_IMAGE_2_MAX_ASPECT_RATIO:
-        if width >= height:
-            width = height * GPT_IMAGE_2_MAX_ASPECT_RATIO
-        else:
-            height = width * GPT_IMAGE_2_MAX_ASPECT_RATIO
-
-    scale = min(1.0, GPT_IMAGE_2_MAX_EDGE / max(width, height))
-    width *= scale
-    height *= scale
-
-    total_pixels = width * height
-    if total_pixels > GPT_IMAGE_2_MAX_PIXELS:
-        scale = (GPT_IMAGE_2_MAX_PIXELS / total_pixels) ** 0.5
-        width *= scale
-        height *= scale
-
-    total_pixels = width * height
-    if total_pixels < GPT_IMAGE_2_MIN_PIXELS:
-        scale = (GPT_IMAGE_2_MIN_PIXELS / total_pixels) ** 0.5
-        width *= scale
-        height *= scale
-
-    scale = min(1.0, GPT_IMAGE_2_MAX_EDGE / max(width, height))
-    width *= scale
-    height *= scale
-
-    target_ratio = width / height
-    target_area = width * height
-    width_candidates = _candidate_values_around(width)
-    height_candidates = _candidate_values_around(height)
-
-    best = None
-    best_score = None
-    for candidate_width in width_candidates:
-        for candidate_height in height_candidates:
-            if not _is_valid_gpt_image_2_size(candidate_width, candidate_height):
-                continue
-
-            candidate_ratio = candidate_width / candidate_height
-            candidate_area = candidate_width * candidate_height
-            score = (
-                abs(candidate_ratio - target_ratio),
-                abs(candidate_area - target_area) / max(target_area, 1.0),
-                abs(candidate_width - width) + abs(candidate_height - height),
-            )
-            if best_score is None or score < best_score:
-                best = (candidate_width, candidate_height)
-                best_score = score
-
-    if best is None:
-        raise ValueError("Failed to resolve a valid auto size for gpt-image-2 from the input image.")
-
-    return f"{best[0]}x{best[1]}"
+    if long_edge <= 1536:
+        size_preset = "1K"
+    elif long_edge <= 2048:
+        size_preset = "2K"
+    else:
+        size_preset = "4K"
+    return _resolve_gpt_image_2_preset_size(size_preset, images=images)
 
 
 def resolve_request_size(model_name, size, images=None):
     spec = get_model_spec(model_name)
-    normalized, width, height = _parse_size_value(size)
+    normalized, _width, _height = _parse_size_value(size)
 
-    if normalized != "auto":
+    if normalized == "auto":
+        if images is None:
+            return "auto"
+
         if spec["supports_custom_size"]:
-            _validate_gpt_image_2_size(width, height)
-            return normalized
+            return _resolve_gpt_image_2_auto_size(images)
 
-        allowed_sizes = spec["allowed_sizes"]
-        if normalized not in allowed_sizes:
-            raise ValueError(f"Model {model_name} only supports sizes: {', '.join(allowed_sizes)}.")
-        return normalized
-
-    if images is None:
-        return "auto"
+        return _resolve_gpt_image_15_auto_size(images)
 
     if spec["supports_custom_size"]:
-        return _resolve_gpt_image_2_auto_size(images)
+        return _resolve_gpt_image_2_preset_size(normalized, images=images)
+
+    if normalized not in spec["allowed_presets"]:
+        raise ValueError(f"Model {model_name} only supports size presets: {', '.join(spec['allowed_presets'])}.")
+
+    if normalized == "1K":
+        if images is None:
+            return "1024x1024"
+        return _resolve_gpt_image_15_auto_size(images)
 
     return _resolve_gpt_image_15_auto_size(images)
 
