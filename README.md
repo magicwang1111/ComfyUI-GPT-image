@@ -86,6 +86,27 @@ python -m pip install -r requirements.txt
 - `input_fidelity`
 - `model_override`
 
+### size 行为
+
+- `gpt-image-1.5`
+  - 只支持 `auto`、`1024x1024`、`1024x1536`、`1536x1024`
+- `gpt-image-2`
+  - 支持 `auto`
+  - 也支持自定义 `WIDTHxHEIGHT`
+  - 当前 relay 实测通过的示例包括 `2048x1152`、`3840x2160`、`832x1472`
+
+`gpt-image-2` 自定义尺寸需要满足这些约束：
+
+- 最大边不超过 `3840`
+- 宽高都必须是 `16` 的倍数
+- 长边 / 短边不超过 `3:1`
+- 总像素数在 `655360` 到 `8294400` 之间
+
+`Edit` 节点里如果把 `size` 设成 `auto`：
+
+- `gpt-image-2` 会根据输入图宽高，自动算出最接近输入比例的合法尺寸
+- `gpt-image-1.5` 会在 `1024x1024`、`1024x1536`、`1536x1024` 里选最接近输入比例的一档
+
 ## 接口行为
 
 - `Generate` 使用 `POST /images/generations`

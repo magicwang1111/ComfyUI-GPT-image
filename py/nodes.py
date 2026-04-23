@@ -19,12 +19,12 @@ from .api import (
     NODE_CATEGORY,
     OUTPUT_FORMAT_OPTIONS,
     QUALITY_OPTIONS,
-    SIZE_OPTIONS,
     AsyncClient,
     Client,
     build_edit_request,
     build_generate_payload,
     extract_generation_output,
+    resolve_request_size,
     sanitize_response_for_debug,
     validate_edit_request,
     validate_generate_request,
@@ -183,7 +183,7 @@ class GPTImageGenerateNode:
             },
             "optional": {
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
-                "size": (SIZE_OPTIONS, {"default": DEFAULT_SIZE}),
+                "size": ("STRING", {"multiline": False, "default": DEFAULT_SIZE}),
                 "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
@@ -215,11 +215,12 @@ class GPTImageGenerateNode:
         client = _create_runtime_async_client()
         try:
             request_model_name = _resolve_model_name(model, model_override)
+            request_size = resolve_request_size(model, size)
             payload = build_generate_payload(
                 model_name=request_model_name,
                 prompt=prompt,
                 n=n,
-                size=size,
+                size=request_size,
                 quality=quality,
                 background=background,
                 output_format=output_format,
@@ -254,7 +255,7 @@ class GPTImageEditNode:
             },
             "optional": {
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
-                "size": (SIZE_OPTIONS, {"default": DEFAULT_SIZE}),
+                "size": ("STRING", {"multiline": False, "default": DEFAULT_SIZE}),
                 "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
@@ -291,12 +292,13 @@ class GPTImageEditNode:
         client = _create_runtime_async_client()
         try:
             request_model_name = _resolve_model_name(model, model_override)
+            request_size = resolve_request_size(model, size, images=images)
             data, files = build_edit_request(
                 model_name=request_model_name,
                 prompt=prompt,
                 images=images,
                 n=n,
-                size=size,
+                size=request_size,
                 quality=quality,
                 background=background,
                 output_format=output_format,

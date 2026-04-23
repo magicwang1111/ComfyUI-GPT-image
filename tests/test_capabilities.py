@@ -43,6 +43,32 @@ class CapabilityTests(unittest.TestCase):
                 input_fidelity="auto",
             )
 
+    def test_gpt_image_2_accepts_custom_size(self):
+        spec = capabilities.validate_generate_request(
+            "gpt-image-2",
+            prompt="test",
+            size="2048x1152",
+        )
+        self.assertEqual(spec["label"], "GPT Image 2")
+
+    def test_gpt_image_15_rejects_custom_size(self):
+        with self.assertRaises(ValueError):
+            capabilities.validate_generate_request(
+                "gpt-image-1.5",
+                prompt="test",
+                size="2048x1152",
+            )
+
+    def test_resolve_request_size_maps_gpt_image_15_auto_to_nearest_ratio(self):
+        images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
+        size = capabilities.resolve_request_size("gpt-image-1.5", "auto", images=images)
+        self.assertEqual(size, "1024x1536")
+
+    def test_resolve_request_size_maps_gpt_image_2_auto_to_valid_custom_size(self):
+        images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
+        size = capabilities.resolve_request_size("gpt-image-2", "auto", images=images)
+        self.assertEqual(size, "848x1504")
+
 
 if __name__ == "__main__":
     unittest.main()
