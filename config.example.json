@@ -1,5 +1,5 @@
 {
   "api_key": "",
-  "request_timeout": 600,
+  "request_timeout": 1200,
   "base_url": "https://aihubmix.com/v1"
 }
