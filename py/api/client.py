@@ -5,7 +5,31 @@ from .exceptions import GPTImageAPIError
 
 
 def _build_timeout_config(timeout):
-    return httpx.Timeout(connect=10.0, read=timeout, write=timeout, pool=timeout)
+    return httpx.Timeout(connect=timeout, read=timeout, write=timeout, pool=timeout)
+
+
+def _raise_timeout_error(exc, method, path, timeout):
+    if isinstance(exc, httpx.ConnectTimeout):
+        raise TimeoutError(
+            f"API connection timed out after {timeout}s while connecting for {method} {path}."
+        ) from exc
+
+    if isinstance(exc, httpx.ReadTimeout):
+        raise TimeoutError(
+            f"API response timed out after {timeout}s while waiting for {method} {path}."
+        ) from exc
+
+    if isinstance(exc, httpx.WriteTimeout):
+        raise TimeoutError(
+            f"API upload timed out after {timeout}s while sending {method} {path}."
+        ) from exc
+
+    if isinstance(exc, httpx.PoolTimeout):
+        raise TimeoutError(
+            f"API connection pool timed out after {timeout}s while preparing {method} {path}."
+        ) from exc
+
+    raise TimeoutError(f"API request timed out after {timeout}s while waiting for {method} {path}.") from exc
 
 
 def _normalize_optional_header(value):
@@ -49,7 +73,7 @@ class Client:
         try:
             response = self._client.request(method, path, **kwargs)
         except httpx.TimeoutException as exc:
-            raise TimeoutError(f"API request timed out after {self.timeout}s while waiting for {method} {path}.") from exc
+            _raise_timeout_error(exc, method, path, self.timeout)
         except httpx.HTTPError as exc:
             raise ConnectionError(f"API request failed for {method} {path}: {exc}") from exc
 
@@ -90,7 +114,7 @@ class AsyncClient:
         try:
             response = await self._client.request(method, path, **kwargs)
         except httpx.TimeoutException as exc:
-            raise TimeoutError(f"API request timed out after {self.timeout}s while waiting for {method} {path}.") from exc
+            _raise_timeout_error(exc, method, path, self.timeout)
         except httpx.HTTPError as exc:
             raise ConnectionError(f"API request failed for {method} {path}: {exc}") from exc
 

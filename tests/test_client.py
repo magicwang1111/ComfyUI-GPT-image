@@ -3,7 +3,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
+
+import httpx
 
 from _loader import import_module
 
@@ -176,6 +178,14 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
 
 
 class ClientTransportTests(unittest.TestCase):
+    def test_timeout_config_uses_same_timeout_for_all_phases(self):
+        timeout = client_module._build_timeout_config(1200)
+
+        self.assertEqual(timeout.connect, 1200)
+        self.assertEqual(timeout.read, 1200)
+        self.assertEqual(timeout.write, 1200)
+        self.assertEqual(timeout.pool, 1200)
+
     def test_builds_bearer_headers(self):
         client = client_module.Client(
             "relay-key",
@@ -211,6 +221,48 @@ class ClientTransportTests(unittest.TestCase):
             self.assertEqual(client._client.headers.get("OpenAI-Project"), "proj_456")
         finally:
             client.close()
+
+    def test_client_surfaces_connect_timeout_with_real_timeout_value(self):
+        client = client_module.Client(
+            "relay-key",
+            timeout=1200,
+            base_url="https://relay.example.com",
+        )
+        try:
+            request = httpx.Request("POST", "https://relay.example.com/images/edits")
+            with patch.object(
+                client._client,
+                "request",
+                side_effect=httpx.ConnectTimeout("boom", request=request),
+            ):
+                with self.assertRaisesRegex(
+                    TimeoutError,
+                    r"API connection timed out after 1200s while connecting for POST /images/edits\.",
+                ):
+                    client.edit_image({}, {})
+        finally:
+            client.close()
+
+    def test_async_client_surfaces_read_timeout_with_real_timeout_value(self):
+        client = client_module.AsyncClient(
+            "relay-key",
+            timeout=1200,
+            base_url="https://relay.example.com",
+        )
+        try:
+            request = httpx.Request("POST", "https://relay.example.com/images/edits")
+            with patch.object(
+                client._client,
+                "request",
+                new=AsyncMock(side_effect=httpx.ReadTimeout("boom", request=request)),
+            ):
+                with self.assertRaisesRegex(
+                    TimeoutError,
+                    r"API response timed out after 1200s while waiting for POST /images/edits\.",
+                ):
+                    asyncio.run(client.edit_image({}, {}))
+        finally:
+            asyncio.run(client.close())
 
 
 if __name__ == "__main__":
