@@ -14,12 +14,23 @@ nodes = import_module("py.nodes")
 
 
 class FakeResolvedClient:
-    def __init__(self, api_key, timeout=60, base_url=None, organization="", project=""):
+    def __init__(
+        self,
+        api_key,
+        timeout=60,
+        base_url=None,
+        organization="",
+        project="",
+        max_retries=1,
+        retry_delay=2.0,
+    ):
         self.api_key = api_key
         self.timeout = timeout
         self.base_url = base_url
         self.organization = organization
         self.project = project
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
 
     def close(self):
         pass
@@ -39,6 +50,8 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                     {
                         "api_key": "json-key",
                         "request_timeout": 90,
+                        "request_retries": 3,
+                        "retry_delay": 0.5,
                         "base_url": "https://json.example.com/",
                     }
                 ),
@@ -58,6 +71,8 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                         client = nodes._create_runtime_client()
                         self.assertEqual(client.api_key, "json-key")
                         self.assertEqual(client.timeout, 90)
+                        self.assertEqual(client.max_retries, 3)
+                        self.assertEqual(client.retry_delay, 0.5)
                         self.assertEqual(client.base_url, "https://json.example.com")
                         self.assertEqual(client.organization, "")
                         self.assertEqual(client.project, "")
@@ -263,6 +278,53 @@ class ClientTransportTests(unittest.TestCase):
                     asyncio.run(client.edit_image({}, {}))
         finally:
             asyncio.run(client.close())
+
+    def test_async_client_retries_interrupted_read_once(self):
+        client = client_module.AsyncClient(
+            "relay-key",
+            max_retries=1,
+            retry_delay=0,
+            base_url="https://relay.example.com",
+        )
+        try:
+            request = httpx.Request("POST", "https://relay.example.com/images/edits")
+            with patch.object(
+                client._client,
+                "request",
+                new=AsyncMock(
+                    side_effect=[
+                        httpx.ReadError("", request=request),
+                        httpx.Response(200, json={"ok": True}, request=request),
+                    ]
+                ),
+            ) as request_mock:
+                response = asyncio.run(client.edit_image({}, {}))
+
+            self.assertEqual(response, {"ok": True})
+            self.assertEqual(request_mock.call_count, 2)
+        finally:
+            asyncio.run(client.close())
+
+    def test_read_error_message_names_interrupted_connection(self):
+        client = client_module.Client(
+            "relay-key",
+            max_retries=0,
+            base_url="https://relay.example.com",
+        )
+        try:
+            request = httpx.Request("POST", "https://relay.example.com/images/edits")
+            with patch.object(
+                client._client,
+                "request",
+                side_effect=httpx.ReadError("", request=request),
+            ):
+                with self.assertRaisesRegex(
+                    ConnectionError,
+                    r"API connection was interrupted while waiting for POST /images/edits: ReadError",
+                ):
+                    client.edit_image({}, {})
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":

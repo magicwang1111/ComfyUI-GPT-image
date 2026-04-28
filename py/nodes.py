@@ -34,6 +34,7 @@ from .api import (
     validate_edit_request,
     validate_generate_request,
 )
+from .api.client import DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONFIG_JSON_PATH = ROOT_DIR / "config.local.json"
@@ -82,6 +83,39 @@ def _parse_timeout(value):
         raise ValueError("request_timeout must be greater than or equal to 5.")
 
     return timeout
+
+
+def _parse_non_negative_int(value, field_name):
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a non-negative integer.")
+
+    if isinstance(value, int):
+        parsed_value = value
+    else:
+        try:
+            parsed_value = int(str(value).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} must be a non-negative integer.") from exc
+
+    if parsed_value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer.")
+
+    return parsed_value
+
+
+def _parse_non_negative_float(value, field_name):
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a non-negative number.")
+
+    try:
+        parsed_value = float(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a non-negative number.") from exc
+
+    if parsed_value < 0:
+        raise ValueError(f"{field_name} must be a non-negative number.")
+
+    return parsed_value
 
 
 def _json_value_present(config_data, key):
@@ -185,6 +219,20 @@ def _resolve_request_timeout(config_data):
     return DEFAULT_REQUEST_TIMEOUT
 
 
+def _resolve_request_retries(config_data):
+    if _json_value_present(config_data, "request_retries"):
+        return _parse_non_negative_int(config_data["request_retries"], "request_retries")
+
+    return DEFAULT_MAX_RETRIES
+
+
+def _resolve_retry_delay(config_data):
+    if _json_value_present(config_data, "retry_delay"):
+        return _parse_non_negative_float(config_data["retry_delay"], "retry_delay")
+
+    return DEFAULT_RETRY_DELAY
+
+
 def _resolve_model_name(selected_model, model_override):
     if model_override is None:
         return selected_model
@@ -204,6 +252,8 @@ def _resolve_runtime_client_kwargs():
         "base_url": _resolve_base_url(config_data, api_provider),
         "organization": _resolve_openai_organization(config_data),
         "project": _resolve_openai_project(config_data),
+        "max_retries": _resolve_request_retries(config_data),
+        "retry_delay": _resolve_retry_delay(config_data),
     }
 
 

@@ -1,7 +1,13 @@
+import asyncio
+import time
+
 import httpx
 
 from .capabilities import DEFAULT_BASE_URL
 from .exceptions import GPTImageAPIError
+
+DEFAULT_MAX_RETRIES = 1
+DEFAULT_RETRY_DELAY = 2.0
 
 
 def _build_timeout_config(timeout):
@@ -38,6 +44,33 @@ def _normalize_optional_header(value):
     return str(value).strip()
 
 
+def _is_retryable_http_error(exc):
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    )
+
+
+def _format_http_error(exc, method, path, attempt, max_retries):
+    detail = str(exc).strip() or exc.__class__.__name__
+    retry_text = ""
+    if max_retries > 0:
+        retry_text = f" after {attempt + 1} attempt(s)"
+
+    if isinstance(exc, httpx.ReadError):
+        return (
+            f"API connection was interrupted while waiting for {method} {path}{retry_text}: {detail}. "
+            "The server or relay closed the connection before returning a response; retry the request or try a "
+            "more stable base_url."
+        )
+
+    return f"API request failed for {method} {path}{retry_text}: {detail}"
+
+
 def _build_headers(api_key, organization="", project=""):
     headers = {"Authorization": f"Bearer {api_key}"}
     organization = _normalize_optional_header(organization)
@@ -52,7 +85,16 @@ def _build_headers(api_key, organization="", project=""):
 
 
 class Client:
-    def __init__(self, api_key, timeout=60, base_url=DEFAULT_BASE_URL, organization="", project=""):
+    def __init__(
+        self,
+        api_key,
+        timeout=60,
+        base_url=DEFAULT_BASE_URL,
+        organization="",
+        project="",
+        max_retries=DEFAULT_MAX_RETRIES,
+        retry_delay=DEFAULT_RETRY_DELAY,
+    ):
         api_key = (api_key or "").strip()
         if not api_key:
             raise ValueError("api_key is required.")
@@ -62,6 +104,8 @@ class Client:
         self.base_url = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         self.organization = _normalize_optional_header(organization)
         self.project = _normalize_optional_header(project)
+        self.max_retries = max(0, int(max_retries))
+        self.retry_delay = max(0.0, float(retry_delay))
         timeout_config = _build_timeout_config(timeout)
         self._client = httpx.Client(
             base_url=self.base_url,
@@ -70,12 +114,17 @@ class Client:
         )
 
     def request(self, method, path, **kwargs):
-        try:
-            response = self._client.request(method, path, **kwargs)
-        except httpx.TimeoutException as exc:
-            _raise_timeout_error(exc, method, path, self.timeout)
-        except httpx.HTTPError as exc:
-            raise ConnectionError(f"API request failed for {method} {path}: {exc}") from exc
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self._client.request(method, path, **kwargs)
+                break
+            except httpx.TimeoutException as exc:
+                _raise_timeout_error(exc, method, path, self.timeout)
+            except httpx.HTTPError as exc:
+                if _is_retryable_http_error(exc) and attempt < self.max_retries:
+                    time.sleep(self.retry_delay)
+                    continue
+                raise ConnectionError(_format_http_error(exc, method, path, attempt, self.max_retries)) from exc
 
         if response.status_code != 200:
             raise GPTImageAPIError.from_response(response)
@@ -93,7 +142,16 @@ class Client:
 
 
 class AsyncClient:
-    def __init__(self, api_key, timeout=60, base_url=DEFAULT_BASE_URL, organization="", project=""):
+    def __init__(
+        self,
+        api_key,
+        timeout=60,
+        base_url=DEFAULT_BASE_URL,
+        organization="",
+        project="",
+        max_retries=DEFAULT_MAX_RETRIES,
+        retry_delay=DEFAULT_RETRY_DELAY,
+    ):
         api_key = (api_key or "").strip()
         if not api_key:
             raise ValueError("api_key is required.")
@@ -103,6 +161,8 @@ class AsyncClient:
         self.base_url = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         self.organization = _normalize_optional_header(organization)
         self.project = _normalize_optional_header(project)
+        self.max_retries = max(0, int(max_retries))
+        self.retry_delay = max(0.0, float(retry_delay))
         timeout_config = _build_timeout_config(timeout)
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -111,12 +171,17 @@ class AsyncClient:
         )
 
     async def request(self, method, path, **kwargs):
-        try:
-            response = await self._client.request(method, path, **kwargs)
-        except httpx.TimeoutException as exc:
-            _raise_timeout_error(exc, method, path, self.timeout)
-        except httpx.HTTPError as exc:
-            raise ConnectionError(f"API request failed for {method} {path}: {exc}") from exc
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = await self._client.request(method, path, **kwargs)
+                break
+            except httpx.TimeoutException as exc:
+                _raise_timeout_error(exc, method, path, self.timeout)
+            except httpx.HTTPError as exc:
+                if _is_retryable_http_error(exc) and attempt < self.max_retries:
+                    await asyncio.sleep(self.retry_delay)
+                    continue
+                raise ConnectionError(_format_http_error(exc, method, path, attempt, self.max_retries)) from exc
 
         if response.status_code != 200:
             raise GPTImageAPIError.from_response(response)
