@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -323,6 +325,30 @@ class ClientTransportTests(unittest.TestCase):
                     r"API connection was interrupted while waiting for POST /images/edits: ReadError",
                 ):
                     client.edit_image({}, {})
+        finally:
+            client.close()
+
+    def test_request_logging_summarizes_without_prompt_text(self):
+        client = client_module.Client(
+            "relay-key",
+            max_retries=0,
+            base_url="https://relay.example.com",
+        )
+        try:
+            request = httpx.Request("POST", "https://relay.example.com/images/generations")
+            response = httpx.Response(200, json={"ok": True}, request=request)
+
+            output = io.StringIO()
+            with patch.object(client._client, "request", return_value=response):
+                with contextlib.redirect_stdout(output):
+                    result = client.generate_image({"model": "gpt-image-2", "prompt": "secret prompt"})
+
+            logged = output.getvalue()
+            self.assertEqual(result, {"ok": True})
+            self.assertIn("POST https://relay.example.com/images/generations attempt 1/1", logged)
+            self.assertIn("json keys=['model', 'prompt']", logged)
+            self.assertIn("response status=200", logged)
+            self.assertNotIn("secret prompt", logged)
         finally:
             client.close()
 

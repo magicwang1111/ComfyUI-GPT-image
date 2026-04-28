@@ -8,6 +8,7 @@ from .exceptions import GPTImageAPIError
 
 DEFAULT_MAX_RETRIES = 1
 DEFAULT_RETRY_DELAY = 2.0
+LOG_PREFIX = "[ComfyUI-GPT-image]"
 
 
 def _build_timeout_config(timeout):
@@ -71,6 +72,79 @@ def _format_http_error(exc, method, path, attempt, max_retries):
     return f"API request failed for {method} {path}{retry_text}: {detail}"
 
 
+def _format_bytes(size):
+    if size < 1024:
+        return f"{size}B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f}KB"
+    return f"{size / (1024 * 1024):.1f}MB"
+
+
+def _file_payload_size(file_item):
+    try:
+        payload = file_item[1]
+        if isinstance(payload, tuple) and len(payload) >= 2:
+            content = payload[1]
+        else:
+            content = payload
+
+        if isinstance(content, (bytes, bytearray)):
+            return len(content)
+        if hasattr(content, "getbuffer"):
+            return len(content.getbuffer())
+        if hasattr(content, "tell") and hasattr(content, "seek"):
+            current_position = content.tell()
+            content.seek(0, 2)
+            size = content.tell()
+            content.seek(current_position)
+            return size
+    except Exception:
+        return 0
+
+    return 0
+
+
+def _summarize_request_kwargs(kwargs):
+    parts = []
+    json_payload = kwargs.get("json")
+    data_payload = kwargs.get("data")
+    files_payload = kwargs.get("files")
+
+    if isinstance(json_payload, dict):
+        parts.append(f"json keys={list(json_payload.keys())}")
+    if isinstance(data_payload, dict):
+        parts.append(f"data keys={list(data_payload.keys())}")
+    if files_payload:
+        if isinstance(files_payload, (list, tuple)):
+            total_size = sum(_file_payload_size(file_item) for file_item in files_payload)
+            parts.append(f"files={len(files_payload)}")
+            if total_size:
+                parts.append(f"upload={_format_bytes(total_size)}")
+        else:
+            parts.append("files=provided")
+
+    return ", ".join(parts) if parts else "no request body"
+
+
+def _log_request_start(base_url, method, path, kwargs, attempt, total_attempts, timeout):
+    print(
+        f"{LOG_PREFIX} {method} {base_url}{path} attempt {attempt}/{total_attempts}: "
+        f"{_summarize_request_kwargs(kwargs)}, timeout={timeout}s"
+    )
+
+
+def _log_request_retry(method, path, exc, attempt, total_attempts, retry_delay):
+    detail = str(exc).strip() or exc.__class__.__name__
+    print(
+        f"{LOG_PREFIX} {method} {path} interrupted on attempt {attempt}/{total_attempts}: "
+        f"{detail}; retrying in {retry_delay:g}s"
+    )
+
+
+def _log_response(method, path, status_code):
+    print(f"{LOG_PREFIX} {method} {path} response status={status_code}")
+
+
 def _build_headers(api_key, organization="", project=""):
     headers = {"Authorization": f"Bearer {api_key}"}
     organization = _normalize_optional_header(organization)
@@ -114,17 +188,22 @@ class Client:
         )
 
     def request(self, method, path, **kwargs):
-        for attempt in range(self.max_retries + 1):
+        total_attempts = self.max_retries + 1
+        for attempt_index in range(total_attempts):
+            attempt = attempt_index + 1
+            _log_request_start(self.base_url, method, path, kwargs, attempt, total_attempts, self.timeout)
             try:
                 response = self._client.request(method, path, **kwargs)
+                _log_response(method, path, response.status_code)
                 break
             except httpx.TimeoutException as exc:
                 _raise_timeout_error(exc, method, path, self.timeout)
             except httpx.HTTPError as exc:
-                if _is_retryable_http_error(exc) and attempt < self.max_retries:
+                if _is_retryable_http_error(exc) and attempt_index < self.max_retries:
+                    _log_request_retry(method, path, exc, attempt, total_attempts, self.retry_delay)
                     time.sleep(self.retry_delay)
                     continue
-                raise ConnectionError(_format_http_error(exc, method, path, attempt, self.max_retries)) from exc
+                raise ConnectionError(_format_http_error(exc, method, path, attempt_index, self.max_retries)) from exc
 
         if response.status_code != 200:
             raise GPTImageAPIError.from_response(response)
@@ -171,17 +250,22 @@ class AsyncClient:
         )
 
     async def request(self, method, path, **kwargs):
-        for attempt in range(self.max_retries + 1):
+        total_attempts = self.max_retries + 1
+        for attempt_index in range(total_attempts):
+            attempt = attempt_index + 1
+            _log_request_start(self.base_url, method, path, kwargs, attempt, total_attempts, self.timeout)
             try:
                 response = await self._client.request(method, path, **kwargs)
+                _log_response(method, path, response.status_code)
                 break
             except httpx.TimeoutException as exc:
                 _raise_timeout_error(exc, method, path, self.timeout)
             except httpx.HTTPError as exc:
-                if _is_retryable_http_error(exc) and attempt < self.max_retries:
+                if _is_retryable_http_error(exc) and attempt_index < self.max_retries:
+                    _log_request_retry(method, path, exc, attempt, total_attempts, self.retry_delay)
                     await asyncio.sleep(self.retry_delay)
                     continue
-                raise ConnectionError(_format_http_error(exc, method, path, attempt, self.max_retries)) from exc
+                raise ConnectionError(_format_http_error(exc, method, path, attempt_index, self.max_retries)) from exc
 
         if response.status_code != 200:
             raise GPTImageAPIError.from_response(response)
