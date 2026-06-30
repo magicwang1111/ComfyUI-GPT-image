@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from .api import (
+    API_PROVIDER_AZURE,
     API_PROVIDER_OPENAI,
     API_PROVIDER_OPTIONS,
     BACKGROUND_OPTIONS,
@@ -39,6 +40,7 @@ from .api.client import DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONFIG_JSON_PATH = ROOT_DIR / "config.local.json"
 DEFAULT_REQUEST_TIMEOUT = 600
+AZURE_OPENAI_V1_SUFFIX = "/openai/v1"
 
 
 def _load_json_config():
@@ -137,6 +139,28 @@ def _normalize_api_provider(value):
     return provider
 
 
+def _is_azure_base_url(base_url):
+    normalized_url = str(base_url).strip().rstrip("/").lower()
+    return (
+        ".openai.azure.com" in normalized_url
+        or ".services.ai.azure.com" in normalized_url
+    )
+
+
+def _normalize_azure_base_url(base_url):
+    endpoint = str(base_url).strip().rstrip("/")
+    for suffix in ("/images/generations", "/images/edits"):
+        if endpoint.endswith(suffix):
+            endpoint = endpoint[: -len(suffix)]
+
+    endpoint_lower = endpoint.lower()
+    if endpoint_lower.endswith(AZURE_OPENAI_V1_SUFFIX):
+        return endpoint
+    if endpoint_lower.endswith("/openai"):
+        return endpoint + "/v1"
+    return endpoint + AZURE_OPENAI_V1_SUFFIX
+
+
 def _resolve_api_provider(config_data):
     if _json_value_present(config_data, "api_provider"):
         return _normalize_api_provider(config_data["api_provider"])
@@ -145,18 +169,30 @@ def _resolve_api_provider(config_data):
         configured_base_url = str(config_data["base_url"]).strip().rstrip("/").lower()
         if configured_base_url.startswith(OPENAI_BASE_URL.lower()):
             return API_PROVIDER_OPENAI
+        if _is_azure_base_url(configured_base_url):
+            return API_PROVIDER_AZURE
         return DEFAULT_API_PROVIDER
 
     env_provider = _load_env_value("GPT_IMAGE_API_PROVIDER")
     if env_provider:
         return _normalize_api_provider(env_provider)
 
-    env_base_url = _load_env_value("GPT_IMAGE_BASE_URL", "OPENAI_BASE_URL")
+    env_base_url = _load_env_value(
+        "GPT_IMAGE_BASE_URL",
+        "OPENAI_BASE_URL",
+        "AZURE_OPENAI_BASE_URL",
+        "AZURE_OPENAI_ENDPOINT",
+    )
     if env_base_url:
         normalized_url = env_base_url.rstrip("/").lower()
         if normalized_url.startswith(OPENAI_BASE_URL.lower()):
             return API_PROVIDER_OPENAI
+        if _is_azure_base_url(normalized_url):
+            return API_PROVIDER_AZURE
         return DEFAULT_API_PROVIDER
+
+    if _load_env_value("AZURE_OPENAI_API_KEY"):
+        return API_PROVIDER_AZURE
 
     if _load_env_value("OPENAI_API_KEY"):
         return API_PROVIDER_OPENAI
@@ -172,6 +208,11 @@ def _resolve_api_key(config_data, api_provider):
     if env_api_key:
         return env_api_key
 
+    if api_provider == API_PROVIDER_AZURE:
+        azure_api_key = _load_env_value("AZURE_OPENAI_API_KEY")
+        if azure_api_key:
+            return azure_api_key
+
     if api_provider == API_PROVIDER_OPENAI:
         openai_api_key = _load_env_value("OPENAI_API_KEY")
         if openai_api_key:
@@ -179,17 +220,31 @@ def _resolve_api_key(config_data, api_provider):
 
     raise ValueError(
         "An API key is required. Add api_key to config.local.json, set GPT_IMAGE_API_KEY, "
-        "or set OPENAI_API_KEY for api_provider=openai."
+        "set OPENAI_API_KEY for api_provider=openai, or set AZURE_OPENAI_API_KEY for api_provider=azure."
     )
 
 
 def _resolve_base_url(config_data, api_provider):
     if _json_value_present(config_data, "base_url"):
-        return str(config_data["base_url"]).strip().rstrip("/")
+        configured_base_url = str(config_data["base_url"]).strip().rstrip("/")
+        if api_provider == API_PROVIDER_AZURE:
+            return _normalize_azure_base_url(configured_base_url)
+        return configured_base_url
 
     env_base_url = _load_env_value("GPT_IMAGE_BASE_URL")
     if env_base_url:
+        if api_provider == API_PROVIDER_AZURE:
+            return _normalize_azure_base_url(env_base_url)
         return env_base_url.rstrip("/")
+
+    if api_provider == API_PROVIDER_AZURE:
+        azure_base_url = _load_env_value("AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_ENDPOINT")
+        if azure_base_url:
+            return _normalize_azure_base_url(azure_base_url)
+        raise ValueError(
+            "Azure OpenAI base URL is required. Add base_url to config.local.json, "
+            "set GPT_IMAGE_BASE_URL, or set AZURE_OPENAI_ENDPOINT."
+        )
 
     if api_provider == API_PROVIDER_OPENAI:
         openai_base_url = _load_env_value("OPENAI_BASE_URL")

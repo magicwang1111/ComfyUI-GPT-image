@@ -1,4 +1,5 @@
 from .capabilities import (
+    API_PROVIDER_AZURE,
     API_PROVIDER_OPENAI,
     API_PROVIDER_OPTIONS,
     API_PROVIDER_RELAY,
@@ -38,6 +39,7 @@ from .image_generation import (
 
 __all__ = [
     "AsyncClient",
+    "API_PROVIDER_AZURE",
     "API_PROVIDER_OPENAI",
     "API_PROVIDER_OPTIONS",
     "API_PROVIDER_RELAY",

@@ -132,6 +132,65 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                         self.assertEqual(client.project, "")
                         client.close()
 
+    def test_azure_provider_uses_azure_env_key_and_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "config.local.json"
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "api_provider": "azure",
+                        "request_timeout": 300,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "AZURE_OPENAI_API_KEY": "azure-env-key",
+                    "AZURE_OPENAI_ENDPOINT": "https://example-resource.services.ai.azure.com",
+                },
+                clear=True,
+            ):
+                with patch.object(nodes, "CONFIG_JSON_PATH", json_path):
+                    with patch.object(nodes, "Client", FakeResolvedClient):
+                        client = nodes._create_runtime_client()
+                        self.assertEqual(client.api_key, "azure-env-key")
+                        self.assertEqual(client.timeout, 300)
+                        self.assertEqual(
+                            client.base_url,
+                            "https://example-resource.services.ai.azure.com/openai/v1",
+                        )
+                        self.assertEqual(client.organization, "")
+                        self.assertEqual(client.project, "")
+                        client.close()
+
+    def test_azure_provider_preserves_configured_openai_v1_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "config.local.json"
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "api_key": "azure-json-key",
+                        "api_provider": "azure",
+                        "base_url": "https://example-resource.services.ai.azure.com/openai/v1/",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {}, clear=True):
+                with patch.object(nodes, "CONFIG_JSON_PATH", json_path):
+                    with patch.object(nodes, "Client", FakeResolvedClient):
+                        client = nodes._create_runtime_client()
+                        self.assertEqual(client.api_key, "azure-json-key")
+                        self.assertEqual(
+                            client.base_url,
+                            "https://example-resource.services.ai.azure.com/openai/v1",
+                        )
+                        client.close()
+
     def test_openai_headers_are_resolved_from_json_or_env(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             json_path = Path(temp_dir) / "config.local.json"

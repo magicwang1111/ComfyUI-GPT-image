@@ -28,6 +28,7 @@ Not supported yet:
 This plugin supports both:
 
 - OpenAI official API
+- Azure OpenAI `/openai/v1` endpoints
 - OpenAI-compatible relay endpoints such as AIHubMix
 
 Both paths use the same Image API routes:
@@ -68,8 +69,8 @@ Create `config.local.json` in the repo root. You can copy `config.example.json` 
 
 ### Config fields
 
-- `api_key`: API key for either OpenAI or a relay.
-- `api_provider`: `relay` or `openai`.
+- `api_key`: API key for OpenAI, Azure OpenAI, or a relay.
+- `api_provider`: `relay`, `openai`, or `azure`.
 - `request_timeout`: Timeout in seconds.
 - `base_url`: API root URL. If omitted, a default is chosen from `api_provider`.
 - `openai_organization`: Optional `OpenAI-Organization` header.
@@ -79,6 +80,7 @@ Create `config.local.json` in the repo root. You can copy `config.example.json` 
 
 - `api_provider=relay`: `https://aihubmix.com/v1`
 - `api_provider=openai`: `https://api.openai.com/v1`
+- `api_provider=azure`: no built-in default; configure `base_url`, `GPT_IMAGE_BASE_URL`, or `AZURE_OPENAI_ENDPOINT`
 
 ### Environment variables
 
@@ -93,6 +95,9 @@ Supported environment variables:
 - `GPT_IMAGE_API_KEY`
 - `GPT_IMAGE_BASE_URL`
 - `GPT_IMAGE_API_PROVIDER`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_BASE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
 - `OPENAI_ORGANIZATION`
@@ -118,6 +123,33 @@ Or use environment variables:
 set OPENAI_API_KEY=sk-...
 set GPT_IMAGE_API_PROVIDER=openai
 ```
+
+### Azure OpenAI example
+
+Use the Azure resource endpoint with `/openai/v1`. If `AZURE_OPENAI_ENDPOINT` is the resource root, the node appends `/openai/v1` automatically.
+
+```json
+{
+  "api_key": "<azure-openai-key>",
+  "api_provider": "azure",
+  "request_timeout": 600,
+  "request_retries": 1,
+  "retry_delay": 2,
+  "base_url": "https://your-resource.services.ai.azure.com/openai/v1",
+  "openai_organization": "",
+  "openai_project": ""
+}
+```
+
+Or use environment variables:
+
+```bat
+set AZURE_OPENAI_API_KEY=<azure-openai-key>
+set AZURE_OPENAI_ENDPOINT=https://your-resource.services.ai.azure.com
+set GPT_IMAGE_API_PROVIDER=azure
+```
+
+For Azure, the node request `model` must be your Azure deployment name, for example `gpt-image-2`. If the UI model label does not match your deployment, put the deployment name in `model_override`.
 
 ## Node parameters
 

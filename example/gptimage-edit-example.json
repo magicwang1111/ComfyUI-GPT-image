@@ -1,0 +1,277 @@
+{
+  "id": "a76b3ced-05f3-41c5-8d21-a044ace9795e",
+  "revision": 0,
+  "last_node_id": 6,
+  "last_link_id": 4,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "ComfyUI-GPT-image Edit",
+      "pos": [
+        1762.4931543350474,
+        -57.42381891764998
+      ],
+      "size": [
+        590.957006788863,
+        617.7778742188013
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "response_json",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "magicwang1111/ComfyUI-GPT-image",
+        "ver": "b74e676b073d3f9245cdf515d261d59ba6f67a40",
+        "Node name for S&R": "ComfyUI-GPT-image Edit"
+      },
+      "widgets_values": [
+        "Replace the original person entirely, including face and outfit.\nStrictly preserve the original pose, body proportions, position, and framing from the source image.\nThe new person must perfectly align with the original skeleton, gesture, and camera perspective.\nCreate a highly attractive Asian female with a celebrity-level appearance, similar to a top-tier Xiaohongshu beauty/fashion influencer.\nFacial structure: well-defined yet natural oval face, refined jawline, slightly narrower lower face, balanced three-dimensional facial proportions.\nEyes: large almond-shaped eyes, bright and expressive, well-defined double eyelids, clear eye whites, slightly elongated eye shape for elegance.\nNose: straight and refined nose bridge, well-proportioned nose tip, delicate but not overly sharp.\nLips: well-shaped lips with clear contours, moderately full, natural soft gloss, slightly lifted corners for a confident look.\nSkin: smooth but realistic skin texture, refined pores, soft glow, clean and healthy without plastic effect.\nMakeup: elevated clean-girl makeup, slightly enhanced contouring, subtle highlight, refined and photogenic.\nHair: smooth, voluminous dark hair, softly styled, enhancing face shape.\nBody: slim with model-like proportions, long legs, slightly enhanced body ratio while remaining realistic.\nPresence: confident, slightly cool and elegant influencer aura, natural but eye-catching.\nWearing the outfit from the reference garment image, strictly matching color, structure, and fabric details.\nCompletely remove all original clothing, accessories, and objects held by the person (including phone, bag, etc).\nSeamlessly integrated into the original scene with accurate scale, perspective, and depth.\nLighting strictly follows the original image.\nShot on smartphone (iPhone-like), slightly flattering lens effect, soft highlight roll-off, subtle grain.\nUltra-realistic, high-end influencer look, not plastic, not over-retouched.",
+        "gpt-image-2",
+        1,
+        "4K",
+        "high",
+        "auto",
+        "png",
+        "high",
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "LoadImage",
+      "pos": [
+        367.247615128647,
+        -373.5503397571149
+      ],
+      "size": [
+        804.0653999999997,
+        894.1466899999999
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "背景图",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "IMG_4483.JPG",
+        "image"
+      ],
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 3,
+      "type": "LoadImage",
+      "pos": [
+        372.3823864184628,
+        629.8851429740289
+      ],
+      "size": [
+        808.0117023109999,
+        891.667477706
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "白底服装搭配图",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "screenshot-20260408-112649.png",
+        "image"
+      ],
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 5,
+      "type": "BatchImagesNode",
+      "pos": [
+        1473.1843392822493,
+        106.12743727213643
+      ],
+      "size": [
+        169.32421875,
+        86
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "image0",
+          "name": "images.image0",
+          "type": "IMAGE",
+          "link": 1
+        },
+        {
+          "label": "image1",
+          "name": "images.image1",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "label": "image2",
+          "name": "images.image2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "BatchImagesNode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 6,
+      "type": "SaveImage",
+      "pos": [
+        2479.090115208434,
+        36.51636091120493
+      ],
+      "size": [
+        391.63213840455046,
+        508.8527484731848
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 4
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1"
+      },
+      "widgets_values": [
+        "0423/gpt"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      5,
+      0,
+      "IMAGE"
+    ],
+    [
+      2,
+      3,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      5,
+      0,
+      1,
+      0,
+      "IMAGE"
+    ],
+    [
+      4,
+      1,
+      0,
+      6,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.740231369451205,
+      "offset": [
+        -841.1192352383207,
+        366.0378484061773
+      ]
+    },
+    "frontendVersion": "1.42.8",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
