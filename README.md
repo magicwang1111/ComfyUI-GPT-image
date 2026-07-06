@@ -29,6 +29,7 @@ This plugin supports both:
 
 - OpenAI official API
 - Azure OpenAI `/openai/v1` endpoints
+- VapeurAI OpenAI-compatible API
 - OpenAI-compatible relay endpoints such as AIHubMix
 
 Both paths use the same Image API routes:
@@ -59,6 +60,7 @@ Create `config.local.json` in the repo root. You can copy `config.example.json` 
 ```json
 {
   "api_key": "",
+  "VAPEUR_API_KEY": "",
   "api_provider": "relay",
   "request_timeout": 600,
   "base_url": "https://aihubmix.com/v1",
@@ -69,8 +71,9 @@ Create `config.local.json` in the repo root. You can copy `config.example.json` 
 
 ### Config fields
 
-- `api_key`: API key for OpenAI, Azure OpenAI, or a relay.
-- `api_provider`: `relay`, `openai`, or `azure`.
+- `api_key`: API key for OpenAI, Azure OpenAI, VapeurAI, or a relay.
+- `VAPEUR_API_KEY`: Optional VapeurAI-specific key used when `api_provider` is `vapeur`.
+- `api_provider`: `relay`, `openai`, `azure`, or `vapeur`.
 - `request_timeout`: Timeout in seconds.
 - `base_url`: API root URL. If omitted, a default is chosen from `api_provider`.
 - `openai_organization`: Optional `OpenAI-Organization` header.
@@ -81,14 +84,16 @@ Create `config.local.json` in the repo root. You can copy `config.example.json` 
 - `api_provider=relay`: `https://aihubmix.com/v1`
 - `api_provider=openai`: `https://api.openai.com/v1`
 - `api_provider=azure`: no built-in default; configure `base_url`, `GPT_IMAGE_BASE_URL`, or `AZURE_OPENAI_ENDPOINT`
+- `api_provider=vapeur`: `https://api.vapeur.ai/v1`
 
 ### Environment variables
 
 Resolution order:
 
-1. `config.local.json`
-2. Environment variables
-3. Built-in defaults
+1. `api_provider` selects the backend.
+2. The selected backend's specific key (`VAPEUR_API_KEY`, `AZURE_OPENAI_API_KEY`, or `OPENAI_API_KEY`).
+3. Generic `api_key` / `GPT_IMAGE_API_KEY` fallback.
+4. Built-in defaults.
 
 Supported environment variables:
 
@@ -100,6 +105,7 @@ Supported environment variables:
 - `AZURE_OPENAI_BASE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
+- `VAPEUR_API_KEY`
 - `OPENAI_ORGANIZATION`
 - `OPENAI_PROJECT_ID`
 - `OPENAI_PROJECT`
@@ -151,6 +157,27 @@ set GPT_IMAGE_API_PROVIDER=azure
 
 For Azure, the node request `model` must be your Azure deployment name, for example `gpt-image-2`. If the UI model label does not match your deployment, put the deployment name in `model_override`.
 
+### VapeurAI example
+
+Set `api_provider` to `vapeur`. This selects `VAPEUR_API_KEY` and the VapeurAI default base URL even if legacy Azure values remain in `api_key` and `base_url`.
+
+For image edits, the Vapeur backend sends edit options as query parameters and uploads repeated `image` multipart fields, matching VapeurAI's OpenAPI schema. `input_fidelity` is omitted because it is not listed by that endpoint.
+
+```json
+{
+  "VAPEUR_API_KEY": "<vapeur-key>",
+  "api_provider": "vapeur",
+  "request_timeout": 600
+}
+```
+
+Or use environment variables:
+
+```bat
+set VAPEUR_API_KEY=<vapeur-key>
+set GPT_IMAGE_API_PROVIDER=vapeur
+```
+
 ## Node parameters
 
 ### Generate
@@ -159,6 +186,7 @@ For Azure, the node request `model` must be your Azure deployment name, for exam
 - `model`
 - `n`
 - `size`
+- `aspect_ratio`
 - `quality`
 - `background`
 - `output_format`
@@ -171,6 +199,7 @@ For Azure, the node request `model` must be your Azure deployment name, for exam
 - `model`
 - `n`
 - `size`
+- `aspect_ratio`
 - `quality`
 - `background`
 - `output_format`
@@ -210,13 +239,15 @@ Supports:
 - `2K`
 - `4K`
 
-Preset mappings:
+Square and common landscape/portrait reference sizes:
 
 - `1K`: `1024x1024`, `1024x1536`, `1536x1024`
 - `2K`: `2048x2048`, `1152x2048`, `2048x1152`
 - `4K`: `2880x2880`, `2160x3840`, `3840x2160`
 
-For `Edit`, the node chooses the closest preset size for the input image aspect ratio.
+For `Edit`, the node reads the first input image ratio and calculates a legal size in the selected tier. It preserves ratios such as `4:3` as `2048x1536` in the `2K` tier instead of forcing them to `2048x2048`. Dimensions are rounded down to multiples of 16 and constrained by the `gpt-image-2` limits.
+
+`aspect_ratio` options are `auto`, `1:1`, `4:3`, `3:4`, `3:2`, `2:3`, `16:9`, and `9:16`. For `Edit`, `auto` follows the first input image; an explicit ratio overrides it. For `Generate`, an explicit ratio combines with the selected size tier.
 
 For `auto` on `gpt-image-2`, the node first picks the size tier from the input long edge:
 
@@ -224,7 +255,7 @@ For `auto` on `gpt-image-2`, the node first picks the size tier from the input l
 - `<= 2048` -> `2K`
 - otherwise -> `4K`
 
-Then it maps to the closest legal size inside that tier.
+It then calculates a legal size in that tier from the first input image ratio.
 
 For `Generate` with no input image:
 

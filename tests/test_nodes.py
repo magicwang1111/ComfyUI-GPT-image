@@ -55,6 +55,8 @@ class NodeExecutionTests(unittest.TestCase):
 
         self.assertNotIn("client", generate_inputs["required"])
         self.assertNotIn("client", edit_inputs["required"])
+        self.assertEqual(generate_inputs["optional"]["aspect_ratio"][0], nodes.ASPECT_RATIO_OPTIONS)
+        self.assertEqual(edit_inputs["optional"]["aspect_ratio"][0], nodes.ASPECT_RATIO_OPTIONS)
 
     def test_generate_node_is_registered(self):
         package = ensure_package_loaded()
@@ -107,6 +109,21 @@ class NodeExecutionTests(unittest.TestCase):
         self.assertIn("base64 omitted", response_json)
         self.assertTrue(client.closed)
 
+    def test_generate_node_calculates_size_from_selected_ratio(self):
+        client = FakeAsyncClient()
+
+        with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+            asyncio.run(
+                nodes.GPTImageGenerateNode().generate(
+                    "hello",
+                    size="2K",
+                    aspect_ratio="4:3",
+                )
+            )
+
+        self.assertEqual(client.generate_calls[0]["size"], "2048x1536")
+        self.assertTrue(client.closed)
+
     def test_edit_node_uses_image_array_files(self):
         import torch
 
@@ -147,7 +164,7 @@ class NodeExecutionTests(unittest.TestCase):
             )
 
         data, _files = client.edit_calls[0]
-        self.assertEqual(data["size"], "1024x1536")
+        self.assertEqual(data["size"], "864x1536")
         self.assertTrue(client.closed)
 
     def test_edit_node_resolves_2k_size_from_input_ratio(self):
@@ -168,6 +185,27 @@ class NodeExecutionTests(unittest.TestCase):
 
         data, _files = client.edit_calls[0]
         self.assertEqual(data["size"], "1152x2048")
+        self.assertTrue(client.closed)
+
+    def test_edit_node_selected_ratio_overrides_input_ratio(self):
+        import torch
+
+        client = FakeAsyncClient()
+        images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
+
+        with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+            asyncio.run(
+                nodes.GPTImageEditNode().generate(
+                    "hello",
+                    images=images,
+                    model="gpt-image-2",
+                    size="2K",
+                    aspect_ratio="1:1",
+                )
+            )
+
+        data, _files = client.edit_calls[0]
+        self.assertEqual(data["size"], "2048x2048")
         self.assertTrue(client.closed)
 
 

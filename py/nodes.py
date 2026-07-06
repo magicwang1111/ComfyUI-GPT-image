@@ -6,8 +6,11 @@ from .api import (
     API_PROVIDER_AZURE,
     API_PROVIDER_OPENAI,
     API_PROVIDER_OPTIONS,
+    API_PROVIDER_VAPEUR,
+    ASPECT_RATIO_OPTIONS,
     BACKGROUND_OPTIONS,
     DEFAULT_API_PROVIDER,
+    DEFAULT_ASPECT_RATIO,
     DEFAULT_BACKGROUND,
     DEFAULT_BASE_URL,
     DEFAULT_INPUT_FIDELITY,
@@ -25,6 +28,7 @@ from .api import (
     OUTPUT_FORMAT_OPTIONS,
     QUALITY_OPTIONS,
     SIZE_PRESETS,
+    VAPEUR_BASE_URL,
     AsyncClient,
     Client,
     build_edit_request,
@@ -169,9 +173,14 @@ def _resolve_api_provider(config_data):
         configured_base_url = str(config_data["base_url"]).strip().rstrip("/").lower()
         if configured_base_url.startswith(OPENAI_BASE_URL.lower()):
             return API_PROVIDER_OPENAI
+        if configured_base_url.startswith(VAPEUR_BASE_URL.lower()):
+            return API_PROVIDER_VAPEUR
         if _is_azure_base_url(configured_base_url):
             return API_PROVIDER_AZURE
         return DEFAULT_API_PROVIDER
+
+    if _json_value_present(config_data, "VAPEUR_API_KEY"):
+        return API_PROVIDER_VAPEUR
 
     env_provider = _load_env_value("GPT_IMAGE_API_PROVIDER")
     if env_provider:
@@ -187,9 +196,14 @@ def _resolve_api_provider(config_data):
         normalized_url = env_base_url.rstrip("/").lower()
         if normalized_url.startswith(OPENAI_BASE_URL.lower()):
             return API_PROVIDER_OPENAI
+        if normalized_url.startswith(VAPEUR_BASE_URL.lower()):
+            return API_PROVIDER_VAPEUR
         if _is_azure_base_url(normalized_url):
             return API_PROVIDER_AZURE
         return DEFAULT_API_PROVIDER
+
+    if _load_env_value("VAPEUR_API_KEY"):
+        return API_PROVIDER_VAPEUR
 
     if _load_env_value("AZURE_OPENAI_API_KEY"):
         return API_PROVIDER_AZURE
@@ -201,6 +215,27 @@ def _resolve_api_provider(config_data):
 
 
 def _resolve_api_key(config_data, api_provider):
+    if api_provider == API_PROVIDER_AZURE:
+        if _json_value_present(config_data, "AZURE_OPENAI_API_KEY"):
+            return str(config_data["AZURE_OPENAI_API_KEY"]).strip()
+        azure_api_key = _load_env_value("AZURE_OPENAI_API_KEY")
+        if azure_api_key:
+            return azure_api_key
+
+    if api_provider == API_PROVIDER_OPENAI:
+        if _json_value_present(config_data, "OPENAI_API_KEY"):
+            return str(config_data["OPENAI_API_KEY"]).strip()
+        openai_api_key = _load_env_value("OPENAI_API_KEY")
+        if openai_api_key:
+            return openai_api_key
+
+    if api_provider == API_PROVIDER_VAPEUR:
+        if _json_value_present(config_data, "VAPEUR_API_KEY"):
+            return str(config_data["VAPEUR_API_KEY"]).strip()
+        vapeur_api_key = _load_env_value("VAPEUR_API_KEY")
+        if vapeur_api_key:
+            return vapeur_api_key
+
     if _json_value_present(config_data, "api_key"):
         return str(config_data["api_key"]).strip()
 
@@ -208,23 +243,17 @@ def _resolve_api_key(config_data, api_provider):
     if env_api_key:
         return env_api_key
 
-    if api_provider == API_PROVIDER_AZURE:
-        azure_api_key = _load_env_value("AZURE_OPENAI_API_KEY")
-        if azure_api_key:
-            return azure_api_key
-
-    if api_provider == API_PROVIDER_OPENAI:
-        openai_api_key = _load_env_value("OPENAI_API_KEY")
-        if openai_api_key:
-            return openai_api_key
-
     raise ValueError(
         "An API key is required. Add api_key to config.local.json, set GPT_IMAGE_API_KEY, "
-        "set OPENAI_API_KEY for api_provider=openai, or set AZURE_OPENAI_API_KEY for api_provider=azure."
+        "set OPENAI_API_KEY for api_provider=openai, set AZURE_OPENAI_API_KEY for api_provider=azure, "
+        "or set VAPEUR_API_KEY for api_provider=vapeur."
     )
 
 
 def _resolve_base_url(config_data, api_provider):
+    if api_provider == API_PROVIDER_VAPEUR:
+        return VAPEUR_BASE_URL
+
     if _json_value_present(config_data, "base_url"):
         configured_base_url = str(config_data["base_url"]).strip().rstrip("/")
         if api_provider == API_PROVIDER_AZURE:
@@ -303,6 +332,7 @@ def _resolve_runtime_client_kwargs():
     api_provider = _resolve_api_provider(config_data)
     return {
         "api_key": _resolve_api_key(config_data, api_provider),
+        "api_provider": api_provider,
         "timeout": _resolve_request_timeout(config_data),
         "base_url": _resolve_base_url(config_data, api_provider),
         "organization": _resolve_openai_organization(config_data),
@@ -356,6 +386,7 @@ class GPTImageGenerateNode:
             "optional": {
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
                 "size": (SIZE_PRESETS, {"default": DEFAULT_SIZE}),
+                "aspect_ratio": (ASPECT_RATIO_OPTIONS, {"default": DEFAULT_ASPECT_RATIO}),
                 "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
@@ -369,6 +400,7 @@ class GPTImageGenerateNode:
         model=DEFAULT_MODEL,
         n=DEFAULT_N,
         size=DEFAULT_SIZE,
+        aspect_ratio=DEFAULT_ASPECT_RATIO,
         quality=DEFAULT_QUALITY,
         background=DEFAULT_BACKGROUND,
         output_format=DEFAULT_OUTPUT_FORMAT,
@@ -379,6 +411,7 @@ class GPTImageGenerateNode:
             prompt=prompt,
             n=n,
             size=size,
+            aspect_ratio=aspect_ratio,
             quality=quality,
             background=background,
             output_format=output_format,
@@ -387,7 +420,7 @@ class GPTImageGenerateNode:
         client = _create_runtime_async_client()
         try:
             request_model_name = _resolve_model_name(model, model_override)
-            request_size = resolve_request_size(model, size)
+            request_size = resolve_request_size(model, size, aspect_ratio=aspect_ratio)
             payload = build_generate_payload(
                 model_name=request_model_name,
                 prompt=prompt,
@@ -428,6 +461,7 @@ class GPTImageEditNode:
             "optional": {
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
                 "size": (SIZE_PRESETS, {"default": DEFAULT_SIZE}),
+                "aspect_ratio": (ASPECT_RATIO_OPTIONS, {"default": DEFAULT_ASPECT_RATIO}),
                 "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
@@ -443,6 +477,7 @@ class GPTImageEditNode:
         model=DEFAULT_MODEL,
         n=DEFAULT_N,
         size=DEFAULT_SIZE,
+        aspect_ratio=DEFAULT_ASPECT_RATIO,
         quality=DEFAULT_QUALITY,
         background=DEFAULT_BACKGROUND,
         output_format=DEFAULT_OUTPUT_FORMAT,
@@ -455,6 +490,7 @@ class GPTImageEditNode:
             images=images,
             n=n,
             size=size,
+            aspect_ratio=aspect_ratio,
             quality=quality,
             background=background,
             output_format=output_format,
@@ -464,7 +500,7 @@ class GPTImageEditNode:
         client = _create_runtime_async_client()
         try:
             request_model_name = _resolve_model_name(model, model_override)
-            request_size = resolve_request_size(model, size, images=images)
+            request_size = resolve_request_size(model, size, images=images, aspect_ratio=aspect_ratio)
             data, files = build_edit_request(
                 model_name=request_model_name,
                 prompt=prompt,

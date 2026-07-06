@@ -67,9 +67,28 @@ class CapabilityTests(unittest.TestCase):
     def test_resolve_request_size_maps_gpt_image_2_auto_to_1k_preset_size(self):
         images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
         size = capabilities.resolve_request_size("gpt-image-2", "auto", images=images)
-        self.assertEqual(size, "1024x1536")
+        self.assertEqual(size, "864x1536")
 
-    def test_resolve_request_size_maps_gpt_image_2_2k_to_nearest_ratio(self):
+    def test_resolve_request_size_preserves_first_image_ratio_for_2k(self):
+        images = torch.zeros((6, 1536, 2048, 3), dtype=torch.float32)
+        size = capabilities.resolve_request_size("gpt-image-2", "2K", images=images)
+        self.assertEqual(size, "2048x1536")
+
+    def test_resolve_request_size_uses_selected_ratio_for_2k(self):
+        images = torch.zeros((6, 1536, 2048, 3), dtype=torch.float32)
+        size = capabilities.resolve_request_size(
+            "gpt-image-2",
+            "2K",
+            images=images,
+            aspect_ratio="9:16",
+        )
+        self.assertEqual(size, "1152x2048")
+
+    def test_generate_size_uses_selected_ratio(self):
+        size = capabilities.resolve_request_size("gpt-image-2", "2K", aspect_ratio="4:3")
+        self.assertEqual(size, "2048x1536")
+
+    def test_resolve_request_size_maps_portrait_gpt_image_2_to_2k(self):
         images = torch.zeros((1, 1478, 833, 3), dtype=torch.float32)
         size = capabilities.resolve_request_size("gpt-image-2", "2K", images=images)
         self.assertEqual(size, "1152x2048")

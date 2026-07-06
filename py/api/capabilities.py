@@ -1,20 +1,32 @@
+import math
+
+
 NODE_PREFIX = "ComfyUI-GPT-image"
 NODE_CATEGORY = NODE_PREFIX
 
 API_PROVIDER_RELAY = "relay"
 API_PROVIDER_OPENAI = "openai"
 API_PROVIDER_AZURE = "azure"
-API_PROVIDER_OPTIONS = [API_PROVIDER_RELAY, API_PROVIDER_OPENAI, API_PROVIDER_AZURE]
+API_PROVIDER_VAPEUR = "vapeur"
+API_PROVIDER_OPTIONS = [
+    API_PROVIDER_RELAY,
+    API_PROVIDER_OPENAI,
+    API_PROVIDER_AZURE,
+    API_PROVIDER_VAPEUR,
+]
 DEFAULT_API_PROVIDER = API_PROVIDER_RELAY
 
 DEFAULT_BASE_URL = "https://aihubmix.com/v1"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
+VAPEUR_BASE_URL = "https://api.vapeur.ai/v1"
 
 MODELS = ["gpt-image-2", "gpt-image-1.5"]
 DEFAULT_MODEL = MODELS[0]
 
 DEFAULT_SIZE = "auto"
 SIZE_PRESETS = ["auto", "1K", "2K", "4K"]
+DEFAULT_ASPECT_RATIO = "auto"
+ASPECT_RATIO_OPTIONS = ["auto", "1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16"]
 GPT_IMAGE_15_SIZE_OPTIONS = ["1024x1024", "1024x1536", "1536x1024"]
 
 GPT_IMAGE_2_MAX_EDGE = 3840
@@ -135,6 +147,17 @@ def _parse_size_value(size):
     return normalized, None, None
 
 
+def _parse_aspect_ratio(aspect_ratio):
+    normalized = str(aspect_ratio).strip().lower() or DEFAULT_ASPECT_RATIO
+    if normalized not in ASPECT_RATIO_OPTIONS:
+        raise ValueError(f"aspect_ratio must be one of: {', '.join(ASPECT_RATIO_OPTIONS)}.")
+    if normalized == DEFAULT_ASPECT_RATIO:
+        return None
+
+    width, height = (int(part) for part in normalized.split(":"))
+    return width / height
+
+
 def _is_valid_gpt_image_2_size(width, height):
     long_edge = max(width, height)
     short_edge = min(width, height)
@@ -161,20 +184,59 @@ def _choose_nearest_size_by_ratio(size_options, ratio):
     return min(size_options, key=lambda size: abs(_SIZE_TO_RATIO[size] - ratio))
 
 
-def _resolve_gpt_image_15_auto_size(images):
-    ratio = get_input_aspect_ratio(images)
+def _resolve_output_aspect_ratio(images, aspect_ratio):
+    ratio = _parse_aspect_ratio(aspect_ratio)
+    if ratio is not None:
+        return ratio
+    if images is None:
+        return None
+    return get_input_aspect_ratio(images)
+
+
+def _resolve_gpt_image_15_size(images=None, aspect_ratio=DEFAULT_ASPECT_RATIO):
+    ratio = _resolve_output_aspect_ratio(images, aspect_ratio)
+    if ratio is None:
+        return "1024x1024"
     return _choose_nearest_size_by_ratio(GPT_IMAGE_15_SIZE_OPTIONS, ratio)
 
-def _resolve_gpt_image_2_preset_size(size_preset, images=None):
+
+def _resolve_gpt_image_2_preset_size(size_preset, images=None, aspect_ratio=DEFAULT_ASPECT_RATIO):
     candidate_sizes = _GPT_IMAGE_2_PRESET_SIZES[size_preset]
-    if images is None:
+    ratio = _resolve_output_aspect_ratio(images, aspect_ratio)
+    if ratio is None:
         return candidate_sizes[0]
 
-    ratio = get_input_aspect_ratio(images)
-    return _choose_nearest_size_by_ratio(candidate_sizes, ratio)
+    ratio = min(max(ratio, 1.0 / GPT_IMAGE_2_MAX_ASPECT_RATIO), GPT_IMAGE_2_MAX_ASPECT_RATIO)
+
+    if size_preset == "1K":
+        if ratio >= 1.0:
+            if ratio <= 1.5:
+                width, height = 1024 * ratio, 1024
+            else:
+                width, height = 1536, 1536 / ratio
+        elif ratio >= 1.0 / 1.5:
+            width, height = 1024, 1024 / ratio
+        else:
+            width, height = 1536 * ratio, 1536
+    elif size_preset == "2K":
+        if ratio >= 1.0:
+            width, height = 2048, 2048 / ratio
+        else:
+            width, height = 2048 * ratio, 2048
+    else:
+        width = math.sqrt(GPT_IMAGE_2_MAX_PIXELS * ratio)
+        height = math.sqrt(GPT_IMAGE_2_MAX_PIXELS / ratio)
+        scale = min(1.0, GPT_IMAGE_2_MAX_EDGE / max(width, height))
+        width *= scale
+        height *= scale
+
+    width = max(GPT_IMAGE_2_SIZE_STEP, int(width // GPT_IMAGE_2_SIZE_STEP) * GPT_IMAGE_2_SIZE_STEP)
+    height = max(GPT_IMAGE_2_SIZE_STEP, int(height // GPT_IMAGE_2_SIZE_STEP) * GPT_IMAGE_2_SIZE_STEP)
+    _validate_gpt_image_2_size(width, height)
+    return f"{width}x{height}"
 
 
-def _resolve_gpt_image_2_auto_size(images):
+def _resolve_gpt_image_2_auto_size(images, aspect_ratio=DEFAULT_ASPECT_RATIO):
     width, height = _extract_image_dimensions(images)
     long_edge = max(width, height)
     if long_edge <= 1536:
@@ -183,34 +245,37 @@ def _resolve_gpt_image_2_auto_size(images):
         size_preset = "2K"
     else:
         size_preset = "4K"
-    return _resolve_gpt_image_2_preset_size(size_preset, images=images)
+    return _resolve_gpt_image_2_preset_size(size_preset, images=images, aspect_ratio=aspect_ratio)
 
 
-def resolve_request_size(model_name, size, images=None):
+def resolve_request_size(model_name, size, images=None, aspect_ratio=DEFAULT_ASPECT_RATIO):
     spec = get_model_spec(model_name)
     normalized, _width, _height = _parse_size_value(size)
+    requested_ratio = _parse_aspect_ratio(aspect_ratio)
 
     if normalized == "auto":
         if images is None:
+            if requested_ratio is not None:
+                if spec["supports_custom_size"]:
+                    return _resolve_gpt_image_2_preset_size("1K", aspect_ratio=aspect_ratio)
+                return _resolve_gpt_image_15_size(aspect_ratio=aspect_ratio)
             return "auto"
 
         if spec["supports_custom_size"]:
-            return _resolve_gpt_image_2_auto_size(images)
+            return _resolve_gpt_image_2_auto_size(images, aspect_ratio=aspect_ratio)
 
-        return _resolve_gpt_image_15_auto_size(images)
+        return _resolve_gpt_image_15_size(images, aspect_ratio=aspect_ratio)
 
     if spec["supports_custom_size"]:
-        return _resolve_gpt_image_2_preset_size(normalized, images=images)
+        return _resolve_gpt_image_2_preset_size(normalized, images=images, aspect_ratio=aspect_ratio)
 
     if normalized not in spec["allowed_presets"]:
         raise ValueError(f"Model {model_name} only supports size presets: {', '.join(spec['allowed_presets'])}.")
 
     if normalized == "1K":
-        if images is None:
-            return "1024x1024"
-        return _resolve_gpt_image_15_auto_size(images)
+        return _resolve_gpt_image_15_size(images, aspect_ratio=aspect_ratio)
 
-    return _resolve_gpt_image_15_auto_size(images)
+    return _resolve_gpt_image_15_size(images, aspect_ratio=aspect_ratio)
 
 
 def _validate_common_request(
@@ -218,6 +283,7 @@ def _validate_common_request(
     prompt,
     n=DEFAULT_N,
     size=DEFAULT_SIZE,
+    aspect_ratio=DEFAULT_ASPECT_RATIO,
     quality=DEFAULT_QUALITY,
     background=DEFAULT_BACKGROUND,
     output_format=DEFAULT_OUTPUT_FORMAT,
@@ -232,7 +298,7 @@ def _validate_common_request(
     if n < 1 or n > MAX_N:
         raise ValueError(f"n must be between 1 and {MAX_N}.")
 
-    resolve_request_size(model_name, size)
+    resolve_request_size(model_name, size, aspect_ratio=aspect_ratio)
 
     if quality not in QUALITY_OPTIONS:
         raise ValueError(f"quality must be one of: {', '.join(QUALITY_OPTIONS)}.")
@@ -251,6 +317,7 @@ def validate_generate_request(
     prompt,
     n=DEFAULT_N,
     size=DEFAULT_SIZE,
+    aspect_ratio=DEFAULT_ASPECT_RATIO,
     quality=DEFAULT_QUALITY,
     background=DEFAULT_BACKGROUND,
     output_format=DEFAULT_OUTPUT_FORMAT,
@@ -260,6 +327,7 @@ def validate_generate_request(
         prompt=prompt,
         n=n,
         size=size,
+        aspect_ratio=aspect_ratio,
         quality=quality,
         background=background,
         output_format=output_format,
@@ -272,6 +340,7 @@ def validate_edit_request(
     images,
     n=DEFAULT_N,
     size=DEFAULT_SIZE,
+    aspect_ratio=DEFAULT_ASPECT_RATIO,
     quality=DEFAULT_QUALITY,
     background=DEFAULT_BACKGROUND,
     output_format=DEFAULT_OUTPUT_FORMAT,
@@ -282,13 +351,14 @@ def validate_edit_request(
         prompt=prompt,
         n=n,
         size=size,
+        aspect_ratio=aspect_ratio,
         quality=quality,
         background=background,
         output_format=output_format,
     )
 
     _count_input_images(images)
-    resolve_request_size(model_name, size, images=images)
+    resolve_request_size(model_name, size, images=images, aspect_ratio=aspect_ratio)
 
     if input_fidelity not in INPUT_FIDELITY_OPTIONS:
         raise ValueError(f"input_fidelity must be one of: {', '.join(INPUT_FIDELITY_OPTIONS)}.")

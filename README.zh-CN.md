@@ -28,6 +28,8 @@
 当前同时支持：
 
 - OpenAI 官方 API
+- Azure OpenAI `/openai/v1` 接口
+- VapeurAI OpenAI 兼容接口
 - OpenAI 兼容中转站，例如 AIHubMix
 
 两种接入方式都使用同一套图片接口：
@@ -58,6 +60,7 @@ python -m pip install -r requirements.txt
 ```json
 {
   "api_key": "",
+  "VAPEUR_API_KEY": "",
   "api_provider": "relay",
   "request_timeout": 600,
   "base_url": "https://aihubmix.com/v1",
@@ -68,8 +71,9 @@ python -m pip install -r requirements.txt
 
 ### 配置项说明
 
-- `api_key`：官方 API 或中转站的 key。
-- `api_provider`：`relay` 或 `openai`。
+- `api_key`：OpenAI、Azure OpenAI、VapeurAI 或中转站的通用 key。
+- `VAPEUR_API_KEY`：VapeurAI 专用 key，在 `api_provider` 为 `vapeur` 时使用。
+- `api_provider`：`relay`、`openai`、`azure` 或 `vapeur`。
 - `request_timeout`：请求超时秒数。
 - `base_url`：API 根地址。不填时会根据 `api_provider` 自动补默认值。
 - `openai_organization`：可选，对应 `OpenAI-Organization` 请求头。
@@ -79,22 +83,29 @@ python -m pip install -r requirements.txt
 
 - `api_provider=relay`：`https://aihubmix.com/v1`
 - `api_provider=openai`：`https://api.openai.com/v1`
+- `api_provider=azure`：无内置默认值，需要配置 `base_url`、`GPT_IMAGE_BASE_URL` 或 `AZURE_OPENAI_ENDPOINT`
+- `api_provider=vapeur`：`https://api.vapeur.ai/v1`
 
 ### 环境变量
 
 运行时优先级：
 
-1. `config.local.json`
-2. 环境变量
-3. 内置默认值
+1. `api_provider` 先确定实际后端。
+2. 使用对应后端的专用密钥（`VAPEUR_API_KEY`、`AZURE_OPENAI_API_KEY` 或 `OPENAI_API_KEY`）。
+3. 未配置专用密钥时才回退到通用 `api_key` / `GPT_IMAGE_API_KEY`。
+4. 最后使用内置默认值。
 
 支持的环境变量：
 
 - `GPT_IMAGE_API_KEY`
 - `GPT_IMAGE_BASE_URL`
 - `GPT_IMAGE_API_PROVIDER`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_BASE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
+- `VAPEUR_API_KEY`
 - `OPENAI_ORGANIZATION`
 - `OPENAI_PROJECT_ID`
 - `OPENAI_PROJECT`
@@ -119,6 +130,27 @@ set OPENAI_API_KEY=sk-...
 set GPT_IMAGE_API_PROVIDER=openai
 ```
 
+### VapeurAI 示例
+
+将 `api_provider` 切换为 `vapeur` 后，即使配置中仍保留旧 Azure 的 `api_key` 和 `base_url`，节点也会优先使用 `VAPEUR_API_KEY` 和 `https://api.vapeur.ai/v1`。
+
+Vapeur 图片编辑请求会按其 OpenAPI 规范把编辑参数放入 URL query，并使用重复的 `image` multipart 字段上传图片。该接口未列出 `input_fidelity`，因此 Vapeur 后端不会发送此字段。
+
+```json
+{
+  "VAPEUR_API_KEY": "<vapeur-key>",
+  "api_provider": "vapeur",
+  "request_timeout": 600
+}
+```
+
+也可以直接设置环境变量：
+
+```bat
+set VAPEUR_API_KEY=<vapeur-key>
+set GPT_IMAGE_API_PROVIDER=vapeur
+```
+
 ## 节点参数
 
 ### Generate
@@ -127,6 +159,7 @@ set GPT_IMAGE_API_PROVIDER=openai
 - `model`
 - `n`
 - `size`
+- `aspect_ratio`
 - `quality`
 - `background`
 - `output_format`
@@ -139,6 +172,7 @@ set GPT_IMAGE_API_PROVIDER=openai
 - `model`
 - `n`
 - `size`
+- `aspect_ratio`
 - `quality`
 - `background`
 - `output_format`
@@ -178,13 +212,15 @@ set GPT_IMAGE_API_PROVIDER=openai
 - `2K`
 - `4K`
 
-预设映射如下：
+方图及常见横竖图参考尺寸如下：
 
 - `1K`：`1024x1024`、`1024x1536`、`1536x1024`
 - `2K`：`2048x2048`、`1152x2048`、`2048x1152`
 - `4K`：`2880x2880`、`2160x3840`、`3840x2160`
 
-在 `Edit` 节点里，节点会根据输入图比例选最接近的一档。
+在 `Edit` 节点里，节点会读取第一张输入图的宽高比，并在所选档位内计算合法尺寸。例如 4:3 输入在 `2K` 档会得到 `2048x1536`，不再被强制映射成 `2048x2048`。宽高会向下取 16 的倍数，并受 `gpt-image-2` 尺寸边界约束。
+
+`aspect_ratio` 可选 `auto`、`1:1`、`4:3`、`3:4`、`3:2`、`2:3`、`16:9` 和 `9:16`。在 `Edit` 中，`auto` 跟随第一张输入图，显式比例会覆盖输入图比例；在 `Generate` 中，显式比例会与所选分辨率档位组合计算。
 
 对于 `gpt-image-2 + auto`，会先根据输入图长边决定档位：
 
@@ -192,7 +228,7 @@ set GPT_IMAGE_API_PROVIDER=openai
 - `<= 2048` -> `2K`
 - 其他 -> `4K`
 
-再在该档位里选最接近比例的合法尺寸。
+再根据第一张输入图的比例计算该档位内的合法尺寸。
 
 对于没有输入图的 `Generate`：
 

@@ -3,7 +3,7 @@ import time
 
 import httpx
 
-from .capabilities import DEFAULT_BASE_URL
+from .capabilities import API_PROVIDER_VAPEUR, DEFAULT_API_PROVIDER, DEFAULT_BASE_URL
 from .exceptions import GPTImageAPIError
 
 DEFAULT_MAX_RETRIES = 1
@@ -108,12 +108,15 @@ def _summarize_request_kwargs(kwargs):
     parts = []
     json_payload = kwargs.get("json")
     data_payload = kwargs.get("data")
+    params_payload = kwargs.get("params")
     files_payload = kwargs.get("files")
 
     if isinstance(json_payload, dict):
         parts.append(f"json keys={list(json_payload.keys())}")
     if isinstance(data_payload, dict):
         parts.append(f"data keys={list(data_payload.keys())}")
+    if isinstance(params_payload, dict):
+        parts.append(f"query keys={list(params_payload.keys())}")
     if files_payload:
         if isinstance(files_payload, (list, tuple)):
             total_size = sum(_file_payload_size(file_item) for file_item in files_payload)
@@ -166,6 +169,7 @@ class Client:
         base_url=DEFAULT_BASE_URL,
         organization="",
         project="",
+        api_provider=DEFAULT_API_PROVIDER,
         max_retries=DEFAULT_MAX_RETRIES,
         retry_delay=DEFAULT_RETRY_DELAY,
     ):
@@ -178,6 +182,7 @@ class Client:
         self.base_url = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         self.organization = _normalize_optional_header(organization)
         self.project = _normalize_optional_header(project)
+        self.api_provider = api_provider
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
         timeout_config = _build_timeout_config(timeout)
@@ -214,6 +219,11 @@ class Client:
         return self.request("POST", "/images/generations", json=payload)
 
     def edit_image(self, data, files):
+        if self.api_provider == API_PROVIDER_VAPEUR:
+            params = {key: value for key, value in data.items() if key != "input_fidelity"}
+            params["response_format"] = "b64_json"
+            files = [("image" if name == "image[]" else name, payload) for name, payload in files]
+            return self.request("POST", "/images/edits", params=params, files=files)
         return self.request("POST", "/images/edits", data=data, files=files)
 
     def close(self):
@@ -228,6 +238,7 @@ class AsyncClient:
         base_url=DEFAULT_BASE_URL,
         organization="",
         project="",
+        api_provider=DEFAULT_API_PROVIDER,
         max_retries=DEFAULT_MAX_RETRIES,
         retry_delay=DEFAULT_RETRY_DELAY,
     ):
@@ -240,6 +251,7 @@ class AsyncClient:
         self.base_url = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
         self.organization = _normalize_optional_header(organization)
         self.project = _normalize_optional_header(project)
+        self.api_provider = api_provider
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
         timeout_config = _build_timeout_config(timeout)
@@ -276,6 +288,11 @@ class AsyncClient:
         return await self.request("POST", "/images/generations", json=payload)
 
     async def edit_image(self, data, files):
+        if self.api_provider == API_PROVIDER_VAPEUR:
+            params = {key: value for key, value in data.items() if key != "input_fidelity"}
+            params["response_format"] = "b64_json"
+            files = [("image" if name == "image[]" else name, payload) for name, payload in files]
+            return await self.request("POST", "/images/edits", params=params, files=files)
         return await self.request("POST", "/images/edits", data=data, files=files)
 
     async def close(self):

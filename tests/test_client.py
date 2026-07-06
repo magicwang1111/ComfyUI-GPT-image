@@ -23,6 +23,7 @@ class FakeResolvedClient:
         base_url=None,
         organization="",
         project="",
+        api_provider="relay",
         max_retries=1,
         retry_delay=2.0,
     ):
@@ -31,6 +32,7 @@ class FakeResolvedClient:
         self.base_url = base_url
         self.organization = organization
         self.project = project
+        self.api_provider = api_provider
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
@@ -189,6 +191,48 @@ class RuntimeConfigResolutionTests(unittest.TestCase):
                             client.base_url,
                             "https://example-resource.services.ai.azure.com/openai/v1",
                         )
+                        client.close()
+
+    def test_vapeur_provider_overrides_legacy_generic_azure_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "config.local.json"
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "api_key": "legacy-azure-key",
+                        "api_provider": "vapeur",
+                        "base_url": "https://legacy-resource.services.ai.azure.com/openai/v1",
+                        "VAPEUR_API_KEY": "vapeur-json-key",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {}, clear=True):
+                with patch.object(nodes, "CONFIG_JSON_PATH", json_path):
+                    with patch.object(nodes, "Client", FakeResolvedClient):
+                        client = nodes._create_runtime_client()
+                        self.assertEqual(client.api_key, "vapeur-json-key")
+                        self.assertEqual(client.api_provider, "vapeur")
+                        self.assertEqual(client.base_url, "https://api.vapeur.ai/v1")
+                        client.close()
+
+    def test_vapeur_env_key_selects_vapeur_provider(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "config.local.json"
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "VAPEUR_API_KEY": "vapeur-env-key",
+                },
+                clear=True,
+            ):
+                with patch.object(nodes, "CONFIG_JSON_PATH", json_path):
+                    with patch.object(nodes, "Client", FakeResolvedClient):
+                        client = nodes._create_runtime_client()
+                        self.assertEqual(client.api_key, "vapeur-env-key")
+                        self.assertEqual(client.base_url, "https://api.vapeur.ai/v1")
                         client.close()
 
     def test_openai_headers_are_resolved_from_json_or_env(self):
@@ -363,6 +407,40 @@ class ClientTransportTests(unittest.TestCase):
 
             self.assertEqual(response, {"ok": True})
             self.assertEqual(request_mock.call_count, 2)
+        finally:
+            asyncio.run(client.close())
+
+    def test_vapeur_edit_uses_query_parameters_and_image_field(self):
+        client = client_module.AsyncClient(
+            "vapeur-key",
+            api_provider="vapeur",
+            base_url="https://api.vapeur.ai/v1",
+        )
+        try:
+            request = httpx.Request("POST", "https://api.vapeur.ai/v1/images/edits")
+            response = httpx.Response(200, json={"ok": True}, request=request)
+            data = {
+                "model": "gpt-image-2",
+                "prompt": "secret prompt",
+                "size": "1024x1024",
+                "input_fidelity": "high",
+            }
+            files = [
+                ("image[]", ("input_0.png", b"png-data", "image/png")),
+                ("image[]", ("input_1.png", b"png-data", "image/png")),
+            ]
+
+            with patch.object(client._client, "request", new=AsyncMock(return_value=response)) as request_mock:
+                result = asyncio.run(client.edit_image(data, files))
+
+            self.assertEqual(result, {"ok": True})
+            request_kwargs = request_mock.await_args.kwargs
+            self.assertNotIn("data", request_kwargs)
+            self.assertEqual(request_kwargs["params"]["model"], "gpt-image-2")
+            self.assertEqual(request_kwargs["params"]["prompt"], "secret prompt")
+            self.assertEqual(request_kwargs["params"]["response_format"], "b64_json")
+            self.assertNotIn("input_fidelity", request_kwargs["params"])
+            self.assertTrue(all(item[0] == "image" for item in request_kwargs["files"]))
         finally:
             asyncio.run(client.close())
 
