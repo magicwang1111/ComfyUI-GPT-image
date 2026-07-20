@@ -444,6 +444,28 @@ class ClientTransportTests(unittest.TestCase):
         finally:
             asyncio.run(client.close())
 
+    def test_vapeur_edit_rejects_prompt_when_encoded_query_is_too_long(self):
+        client = client_module.AsyncClient(
+            "vapeur-key",
+            api_provider="vapeur",
+            base_url="https://api.vapeur.ai/v1",
+        )
+        try:
+            data = {
+                "model": "gpt-image-2",
+                "prompt": "中" * 1000,
+                "size": "1024x1024",
+                "input_fidelity": "high",
+            }
+
+            with patch.object(client._client, "request", new=AsyncMock()) as request_mock:
+                with self.assertRaisesRegex(ValueError, "Vapeur 图片编辑提示词过长"):
+                    asyncio.run(client.edit_image(data, []))
+
+            request_mock.assert_not_awaited()
+        finally:
+            asyncio.run(client.close())
+
     def test_read_error_message_names_interrupted_connection(self):
         client = client_module.Client(
             "relay-key",
