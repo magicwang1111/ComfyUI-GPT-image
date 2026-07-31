@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import json
 import unittest
 from unittest.mock import patch
 
@@ -19,30 +20,38 @@ def _make_base64_png(color):
 
 
 class FakeAsyncClient:
-    def __init__(self):
+    def __init__(self, usage=None, api_provider="vapeur"):
         self.generate_calls = []
         self.edit_calls = []
         self.closed = False
+        self.usage = usage
+        self.api_provider = api_provider
 
     async def generate_image(self, payload):
         self.generate_calls.append(payload)
         image_count = int(payload.get("n", 1))
-        return {
+        response = {
             "data": [
                 {"b64_json": _make_base64_png((255, index, 0))}
                 for index in range(image_count)
             ]
         }
+        if self.usage is not None:
+            response["usage"] = self.usage
+        return response
 
     async def edit_image(self, data, files):
         self.edit_calls.append((data, files))
         image_count = int(data.get("n", 1))
-        return {
+        response = {
             "data": [
                 {"b64_json": _make_base64_png((0, index, 255))}
                 for index in range(image_count)
             ]
         }
+        if self.usage is not None:
+            response["usage"] = self.usage
+        return response
 
     async def close(self):
         self.closed = True
@@ -122,6 +131,32 @@ class NodeExecutionTests(unittest.TestCase):
             )
 
         self.assertEqual(client.generate_calls[0]["size"], "2048x1536")
+        self.assertTrue(client.closed)
+
+    def test_generate_node_returns_vapeur_cost_ui_and_response_breakdown(self):
+        usage = {
+            "input_tokens": 972,
+            "output_tokens": 196,
+            "input_tokens_details": {
+                "text_tokens": 12,
+                "image_tokens": 960,
+            },
+            "output_tokens_details": {
+                "text_tokens": 0,
+                "image_tokens": 196,
+            },
+        }
+        client = FakeAsyncClient(usage=usage)
+
+        with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+            node_result = asyncio.run(nodes.GPTImageGenerateNode().generate("hello"))
+
+        self.assertEqual(
+            node_result["ui"]["gpt_image_cost"],
+            ["本次费用（预估）：$0.013620\n文本输入 12 · 图片输入 960 · 图片输出 196 tokens"],
+        )
+        response_payload = json.loads(node_result["result"][1])
+        self.assertAlmostEqual(response_payload["cost_estimate"]["estimated_total_usd"], 0.01362)
         self.assertTrue(client.closed)
 
     def test_edit_node_uses_image_array_files(self):

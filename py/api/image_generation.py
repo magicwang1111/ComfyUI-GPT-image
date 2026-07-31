@@ -15,6 +15,12 @@ from .capabilities import (
     DEFAULT_SIZE,
 )
 
+VAPEUR_GPT_IMAGE_2_RATES_USD_PER_MILLION = {
+    "text_input": 5.0,
+    "image_input": 8.0,
+    "image_output": 30.0,
+}
+
 
 def _tensor_to_pil_images(images):
     if images is None:
@@ -122,6 +128,56 @@ def _sanitize_payload(value, parent_key=None):
 
 def sanitize_response_for_debug(response_payload):
     return _sanitize_payload(copy.deepcopy(response_payload))
+
+
+def _nonnegative_token_count(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    return None
+
+
+def estimate_vapeur_gpt_image_2_cost(response_payload):
+    if not isinstance(response_payload, dict):
+        return None
+
+    usage = response_payload.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    input_details = usage.get("input_tokens_details")
+    output_details = usage.get("output_tokens_details")
+    input_details = input_details if isinstance(input_details, dict) else {}
+    output_details = output_details if isinstance(output_details, dict) else {}
+
+    text_input_tokens = _nonnegative_token_count(input_details.get("text_tokens"))
+    image_input_tokens = _nonnegative_token_count(input_details.get("image_tokens"))
+    image_output_tokens = _nonnegative_token_count(output_details.get("image_tokens"))
+
+    if image_output_tokens is None:
+        image_output_tokens = _nonnegative_token_count(usage.get("output_tokens"))
+
+    if text_input_tokens is None or image_input_tokens is None or image_output_tokens is None:
+        return None
+
+    token_counts = {
+        "text_input": text_input_tokens,
+        "image_input": image_input_tokens,
+        "image_output": image_output_tokens,
+    }
+    breakdown_usd = {
+        key: tokens * VAPEUR_GPT_IMAGE_2_RATES_USD_PER_MILLION[key] / 1_000_000
+        for key, tokens in token_counts.items()
+    }
+
+    return {
+        "currency": "USD",
+        "estimated_total_usd": sum(breakdown_usd.values()),
+        "tokens": token_counts,
+        "breakdown_usd": breakdown_usd,
+        "rates_usd_per_million": dict(VAPEUR_GPT_IMAGE_2_RATES_USD_PER_MILLION),
+    }
 
 
 def _decode_base64_image(encoded_image):

@@ -77,6 +77,48 @@ class ImageGenerationTests(unittest.TestCase):
         sanitized = image_generation.sanitize_response_for_debug(payload)
         self.assertIn("base64 omitted", sanitized["data"][0]["b64_json"])
 
+    def test_estimate_vapeur_cost_uses_usage_modality_breakdown(self):
+        payload = {
+            "usage": {
+                "total_tokens": 1168,
+                "input_tokens": 972,
+                "output_tokens": 196,
+                "input_tokens_details": {
+                    "text_tokens": 12,
+                    "image_tokens": 960,
+                },
+                "output_tokens_details": {
+                    "text_tokens": 0,
+                    "image_tokens": 196,
+                },
+            }
+        }
+
+        estimate = image_generation.estimate_vapeur_gpt_image_2_cost(payload)
+
+        self.assertEqual(
+            estimate["tokens"],
+            {
+                "text_input": 12,
+                "image_input": 960,
+                "image_output": 196,
+            },
+        )
+        self.assertAlmostEqual(estimate["estimated_total_usd"], 0.01362)
+        self.assertAlmostEqual(estimate["breakdown_usd"]["text_input"], 0.00006)
+        self.assertAlmostEqual(estimate["breakdown_usd"]["image_input"], 0.00768)
+        self.assertAlmostEqual(estimate["breakdown_usd"]["image_output"], 0.00588)
+
+    def test_estimate_vapeur_cost_requires_complete_modality_breakdown(self):
+        payload = {
+            "usage": {
+                "input_tokens": 972,
+                "output_tokens": 196,
+            }
+        }
+
+        self.assertIsNone(image_generation.estimate_vapeur_gpt_image_2_cost(payload))
+
 
 if __name__ == "__main__":
     unittest.main()

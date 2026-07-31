@@ -273,6 +273,13 @@ For `Generate` with no input image:
 
 `response_json` keeps the response structure for debugging, but replaces `b64_json` with a placeholder so logs do not explode in size.
 
+When Vapeur returns `usage` for `gpt-image-2`, the node also:
+
+- displays the estimated USD cost below the node after execution
+- adds a `cost_estimate` breakdown to `response_json`
+
+The estimate uses Vapeur's text-input, image-input, and image-output token rates. The provider's billing page remains authoritative.
+
 ## Capability probe
 
 The repo includes a probe script for either OpenAI or relay endpoints:

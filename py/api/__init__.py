@@ -37,6 +37,7 @@ from .exceptions import GPTImageAPIError
 from .image_generation import (
     build_edit_request,
     build_generate_payload,
+    estimate_vapeur_gpt_image_2_cost,
     extract_generation_output,
     sanitize_response_for_debug,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "VAPEUR_BASE_URL",
     "build_edit_request",
     "build_generate_payload",
+    "estimate_vapeur_gpt_image_2_cost",
     "extract_generation_output",
     "get_input_aspect_ratio",
     "get_model_spec",

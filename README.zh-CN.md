@@ -246,6 +246,13 @@ set GPT_IMAGE_API_PROVIDER=vapeur
 
 `response_json` 会保留调试结构，但会把 `b64_json` 替换成占位文本，避免日志过大。
 
+当 Vapeur 为 `gpt-image-2` 返回 `usage` 时，节点还会：
+
+- 在执行完成后于节点底部显示预估美元费用
+- 在 `response_json` 中加入 `cost_estimate` 费用明细
+
+费用根据 Vapeur 返回的文本输入、图片输入和图片输出 token 分项估算，最终扣费以 Vapeur 账单为准。
+
 ## Capability Probe
 
 仓库内置 probe 脚本，可用于官方 API 或中转站：

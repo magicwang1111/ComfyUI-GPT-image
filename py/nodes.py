@@ -33,6 +33,7 @@ from .api import (
     Client,
     build_edit_request,
     build_generate_payload,
+    estimate_vapeur_gpt_image_2_cost,
     extract_generation_output,
     resolve_request_size,
     sanitize_response_for_debug,
@@ -363,9 +364,35 @@ def _raise_with_api_guidance(exc):
     raise ValueError(str(exc)) from exc
 
 
-def _build_response_json(response_payload):
+def _build_response_json(response_payload, cost_estimate=None):
     sanitized = sanitize_response_for_debug(response_payload)
+    if cost_estimate is not None:
+        sanitized["cost_estimate"] = cost_estimate
     return json.dumps(sanitized, ensure_ascii=False, indent=2)
+
+
+def _format_cost_summary(cost_estimate):
+    tokens = cost_estimate["tokens"]
+    return (
+        f"本次费用（预估）：${cost_estimate['estimated_total_usd']:.6f}\n"
+        f"文本输入 {tokens['text_input']:,} · 图片输入 {tokens['image_input']:,} · "
+        f"图片输出 {tokens['image_output']:,} tokens"
+    )
+
+
+def _build_node_result(response_payload, image_output, api_provider, model_name):
+    cost_estimate = None
+    if api_provider == API_PROVIDER_VAPEUR and str(model_name).strip().lower() == "gpt-image-2":
+        cost_estimate = estimate_vapeur_gpt_image_2_cost(response_payload)
+
+    result = (image_output, _build_response_json(response_payload, cost_estimate))
+    if cost_estimate is None:
+        return result
+
+    return {
+        "ui": {"gpt_image_cost": [_format_cost_summary(cost_estimate)]},
+        "result": result,
+    }
 
 
 class GPTImageGenerateNode:
@@ -439,7 +466,12 @@ class GPTImageGenerateNode:
             await client.close()
 
         print(f"[ComfyUI-GPT-image] {request_model_name} generate request completed")
-        return extract_generation_output(response_payload), _build_response_json(response_payload)
+        return _build_node_result(
+            response_payload,
+            extract_generation_output(response_payload),
+            getattr(client, "api_provider", ""),
+            request_model_name,
+        )
 
 
 class GPTImageEditNode:
@@ -521,4 +553,9 @@ class GPTImageEditNode:
             await client.close()
 
         print(f"[ComfyUI-GPT-image] {request_model_name} edit request completed")
-        return extract_generation_output(response_payload), _build_response_json(response_payload)
+        return _build_node_result(
+            response_payload,
+            extract_generation_output(response_payload),
+            getattr(client, "api_provider", ""),
+            request_model_name,
+        )
