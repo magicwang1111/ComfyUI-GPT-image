@@ -41,6 +41,12 @@ Both paths use the same Image API routes:
 
 - `gpt-image-2`
 - `gpt-image-1.5`
+- `gpt-image-2.5-flare`
+- `gpt-image-2.5-sunburst`
+
+Generate and Edit share this model list. The 2.5 models use Image 2 sizing rules and add `xhigh` and `max` quality. The quality dropdown follows the selected model; switching from a 2.5-only quality to an older model resets quality to `high`. Backend validation also rejects unsupported combinations.
+`model` selects parameter capabilities; use `model_override` only for a custom deployment of that model.
+Azure Flare and Sunburst both reject `input_fidelity` in live testing, so the node omits it for those provider/model combinations; the selected low/high value does not apply. Image editing has been verified successfully on both models with this field omitted.
 
 If your relay uses a different model alias, use `model_override` to send the actual model name.
 

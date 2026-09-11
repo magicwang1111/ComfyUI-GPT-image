@@ -8,6 +8,27 @@ capabilities = import_module("py.api.capabilities")
 
 
 class CapabilityTests(unittest.TestCase):
+    def test_quality_is_validated_for_each_model(self):
+        for model in capabilities.MODELS:
+            for quality in capabilities.QUALITY_OPTIONS:
+                with self.subTest(model=model, quality=quality):
+                    if model in ("gpt-image-2", "gpt-image-1.5") and quality in ("xhigh", "max"):
+                        with self.assertRaisesRegex(ValueError, model):
+                            capabilities.validate_generate_request(model, prompt="test", quality=quality)
+                    else:
+                        capabilities.validate_generate_request(model, prompt="test", quality=quality)
+
+    def test_25_edit_accepts_multiple_images_and_extended_quality(self):
+        images = torch.zeros((16, 8, 8, 3), dtype=torch.float32)
+        for model in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst"):
+            for quality in ("xhigh", "max"):
+                with self.subTest(model=model, quality=quality):
+                    capabilities.validate_edit_request(model, prompt="test", images=images, quality=quality)
+                    self.assertEqual(
+                        capabilities.resolve_request_size(model, "2K", images=images, aspect_ratio="4:3"),
+                        "2048x1536",
+                    )
+
     def test_validate_generate_rejects_unknown_model(self):
         with self.assertRaises(ValueError):
             capabilities.validate_generate_request(

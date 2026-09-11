@@ -41,6 +41,12 @@
 
 - `gpt-image-2`
 - `gpt-image-1.5`
+- `gpt-image-2.5-flare`
+- `gpt-image-2.5-sunburst`
+
+Generate 和 Edit 共用模型列表。2.5 沿用 Image 2 的尺寸规则，并新增 `xhigh`、`max` 质量档位。质量下拉框按模型更新；从 2.5 的 `xhigh`/`max` 切回旧模型时，质量会调整为 `high`。后端也会拒绝旧模型的不支持档位。
+`model` 决定参数能力，`model_override` 仅用于填写该模型对应的自定义部署名。
+Azure Flare 和 Sunburst 实测均拒绝 `input_fidelity`，节点会为这两个模型省略该字段，界面所选的 low/high 对这两个部署不生效。省略后两个模型的图像编辑均已实测成功。
 
 如果中转站还有别名模型，可以用 `model_override` 覆盖实际请求模型名。
 

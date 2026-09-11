@@ -20,7 +20,7 @@ DEFAULT_BASE_URL = "https://aihubmix.com/v1"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 VAPEUR_BASE_URL = "https://api.vapeur.ai/v1"
 
-MODELS = ["gpt-image-2", "gpt-image-1.5"]
+MODELS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]
 DEFAULT_MODEL = MODELS[0]
 
 DEFAULT_SIZE = "auto"
@@ -35,7 +35,8 @@ GPT_IMAGE_2_MAX_PIXELS = 8294400
 GPT_IMAGE_2_MAX_ASPECT_RATIO = 3.0
 GPT_IMAGE_2_SIZE_STEP = 16
 
-QUALITY_OPTIONS = ["auto", "low", "medium", "high"]
+BASE_QUALITY_OPTIONS = ["auto", "low", "medium", "high"]
+QUALITY_OPTIONS = [*BASE_QUALITY_OPTIONS, "xhigh", "max"]
 DEFAULT_QUALITY = "auto"
 
 BACKGROUND_OPTIONS = ["auto", "transparent", "opaque"]
@@ -71,16 +72,34 @@ for _size_list in list(_GPT_IMAGE_2_PRESET_SIZES.values()) + [GPT_IMAGE_15_SIZE_
 MODEL_SPECS = {
     "gpt-image-2": {
         "label": "GPT Image 2",
+        "quality_options": BASE_QUALITY_OPTIONS,
         "supports_edit": True,
         "supports_input_fidelity": True,
         "supports_custom_size": True,
     },
     "gpt-image-1.5": {
         "label": "GPT Image 1.5",
+        "quality_options": BASE_QUALITY_OPTIONS,
         "supports_edit": True,
         "supports_input_fidelity": True,
         "supports_custom_size": False,
         "allowed_presets": ["auto", "1K"],
+    },
+    "gpt-image-2.5-flare": {
+        "label": "GPT Image 2.5 Flare",
+        "quality_options": QUALITY_OPTIONS,
+        "supports_edit": True,
+        "supports_input_fidelity": True,
+        "azure_supports_input_fidelity": False,
+        "supports_custom_size": True,
+    },
+    "gpt-image-2.5-sunburst": {
+        "label": "GPT Image 2.5 Sunburst",
+        "quality_options": QUALITY_OPTIONS,
+        "supports_edit": True,
+        "supports_input_fidelity": True,
+        "azure_supports_input_fidelity": False,
+        "supports_custom_size": True,
     },
 }
 
@@ -300,8 +319,8 @@ def _validate_common_request(
 
     resolve_request_size(model_name, size, aspect_ratio=aspect_ratio)
 
-    if quality not in QUALITY_OPTIONS:
-        raise ValueError(f"quality must be one of: {', '.join(QUALITY_OPTIONS)}.")
+    if quality not in spec["quality_options"]:
+        raise ValueError(f"Model {model_name} quality must be one of: {', '.join(spec['quality_options'])}.")
 
     if background not in BACKGROUND_OPTIONS:
         raise ValueError(f"background must be one of: {', '.join(BACKGROUND_OPTIONS)}.")

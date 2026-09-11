@@ -58,6 +58,38 @@ class FakeAsyncClient:
 
 
 class NodeExecutionTests(unittest.TestCase):
+    def test_azure_25_omits_fidelity_but_other_models_and_providers_preserve_it(self):
+        import torch
+
+        for provider, model in (("azure", "gpt-image-2.5-flare"), ("azure", "gpt-image-2.5-sunburst"), ("azure", "gpt-image-2"), ("openai", "gpt-image-2.5-flare"), ("openai", "gpt-image-2.5-sunburst")):
+            with self.subTest(provider=provider, model=model):
+                client = FakeAsyncClient(api_provider=provider)
+                with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+                    asyncio.run(nodes.GPTImageEditNode().generate(
+                        prompt="test", images=torch.zeros((2, 8, 8, 3)), model=model, input_fidelity="high",
+                    ))
+                data, files = client.edit_calls[0]
+                self.assertEqual(len(files), 2)
+                if provider == "azure" and model in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst"):
+                    self.assertNotIn("input_fidelity", data)
+                else:
+                    self.assertEqual(data["input_fidelity"], "high")
+
+    def test_unsupported_quality_fails_before_client_creation(self):
+        with patch.object(nodes, "_create_runtime_async_client") as factory:
+            with self.assertRaisesRegex(ValueError, "quality"):
+                asyncio.run(nodes.GPTImageGenerateNode().generate(prompt="test", model="gpt-image-2", quality="max"))
+            factory.assert_not_called()
+
+    def test_25_quality_and_deployment_are_sent_unchanged(self):
+        client = FakeAsyncClient(api_provider="azure")
+        with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+            asyncio.run(nodes.GPTImageGenerateNode().generate(
+                prompt="test", model="gpt-image-2.5-flare", quality="max", model_override="my-flare-deployment",
+            ))
+        self.assertEqual(client.generate_calls[0]["quality"], "max")
+        self.assertEqual(client.generate_calls[0]["model"], "my-flare-deployment")
+
     def test_generation_nodes_do_not_require_client_input(self):
         generate_inputs = nodes.GPTImageGenerateNode.INPUT_TYPES()
         edit_inputs = nodes.GPTImageEditNode.INPUT_TYPES()

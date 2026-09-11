@@ -35,6 +35,7 @@ from .api import (
     build_generate_payload,
     estimate_vapeur_gpt_image_2_cost,
     extract_generation_output,
+    get_model_spec,
     resolve_request_size,
     sanitize_response_for_debug,
     validate_edit_request,
@@ -414,7 +415,10 @@ class GPTImageGenerateNode:
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
                 "size": (SIZE_PRESETS, {"default": DEFAULT_SIZE}),
                 "aspect_ratio": (ASPECT_RATIO_OPTIONS, {"default": DEFAULT_ASPECT_RATIO}),
-                "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
+                "quality": (QUALITY_OPTIONS, {
+                    "default": DEFAULT_QUALITY,
+                    "model_quality_options": {name: get_model_spec(name)["quality_options"] for name in MODELS},
+                }),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
                 "model_override": ("STRING", {"multiline": False, "default": ""}),
@@ -494,10 +498,16 @@ class GPTImageEditNode:
                 "n": ("INT", {"default": DEFAULT_N, "min": 1, "max": MAX_N}),
                 "size": (SIZE_PRESETS, {"default": DEFAULT_SIZE}),
                 "aspect_ratio": (ASPECT_RATIO_OPTIONS, {"default": DEFAULT_ASPECT_RATIO}),
-                "quality": (QUALITY_OPTIONS, {"default": DEFAULT_QUALITY}),
+                "quality": (QUALITY_OPTIONS, {
+                    "default": DEFAULT_QUALITY,
+                    "model_quality_options": {name: get_model_spec(name)["quality_options"] for name in MODELS},
+                }),
                 "background": (BACKGROUND_OPTIONS, {"default": DEFAULT_BACKGROUND}),
                 "output_format": (OUTPUT_FORMAT_OPTIONS, {"default": DEFAULT_OUTPUT_FORMAT}),
-                "input_fidelity": (INPUT_FIDELITY_OPTIONS, {"default": DEFAULT_INPUT_FIDELITY}),
+                "input_fidelity": (INPUT_FIDELITY_OPTIONS, {
+                    "default": DEFAULT_INPUT_FIDELITY,
+                    "tooltip": "Azure GPT Image 2.5 Flare and Sunburst do not accept this parameter; it is omitted for those deployments.",
+                }),
                 "model_override": ("STRING", {"multiline": False, "default": ""}),
             },
         }
@@ -544,6 +554,8 @@ class GPTImageEditNode:
                 output_format=output_format,
                 input_fidelity=input_fidelity,
             )
+            if client.api_provider == API_PROVIDER_AZURE and not get_model_spec(model).get("azure_supports_input_fidelity", True):
+                data.pop("input_fidelity", None)
 
             try:
                 response_payload = await client.edit_image(data, files)
