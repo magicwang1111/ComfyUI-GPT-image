@@ -410,7 +410,7 @@ class ClientTransportTests(unittest.TestCase):
         finally:
             asyncio.run(client.close())
 
-    def test_vapeur_edit_uses_query_parameters_and_image_field(self):
+    def test_vapeur_edit_uses_form_parameters_and_image_field(self):
         client = client_module.AsyncClient(
             "vapeur-key",
             api_provider="vapeur",
@@ -435,36 +435,54 @@ class ClientTransportTests(unittest.TestCase):
 
             self.assertEqual(result, {"ok": True})
             request_kwargs = request_mock.await_args.kwargs
-            self.assertNotIn("data", request_kwargs)
-            self.assertEqual(request_kwargs["params"]["model"], "gpt-image-2")
-            self.assertEqual(request_kwargs["params"]["prompt"], "secret prompt")
-            self.assertEqual(request_kwargs["params"]["response_format"], "b64_json")
-            self.assertNotIn("input_fidelity", request_kwargs["params"])
+            self.assertNotIn("params", request_kwargs)
+            self.assertEqual(request_kwargs["data"]["model"], "gpt-image-2")
+            self.assertEqual(request_kwargs["data"]["prompt"], "secret prompt")
+            self.assertNotIn("response_format", request_kwargs["data"])
+            self.assertNotIn("input_fidelity", request_kwargs["data"])
             self.assertTrue(all(item[0] == "image" for item in request_kwargs["files"]))
         finally:
             asyncio.run(client.close())
 
-    def test_vapeur_edit_rejects_prompt_when_encoded_query_is_too_long(self):
-        client = client_module.AsyncClient(
-            "vapeur-key",
-            api_provider="vapeur",
-            base_url="https://api.vapeur.ai/v1",
-        )
-        try:
-            data = {
-                "model": "gpt-image-2",
-                "prompt": "中" * 1000,
-                "size": "1024x1024",
-                "input_fidelity": "high",
-            }
-
-            with patch.object(client._client, "request", new=AsyncMock()) as request_mock:
-                with self.assertRaisesRegex(ValueError, "Vapeur 图片编辑提示词过长"):
-                    asyncio.run(client.edit_image(data, []))
-
-            request_mock.assert_not_awaited()
-        finally:
-            asyncio.run(client.close())
+    def test_vapeur_25_transport_sync_and_async(self):
+        for cls in (client_module.Client, client_module.AsyncClient):
+            for model in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst"):
+                with self.subTest(client=cls.__name__, model=model):
+                    client = cls("test-key", api_provider="vapeur", base_url="https://api.vapeur.ai/v1")
+                    is_async = cls is client_module.AsyncClient
+                    def run(value):
+                        return asyncio.run(value) if is_async else value
+                    run(client.close())
+                    requests = []
+                    def handler(request):
+                        requests.append(request)
+                        return httpx.Response(200, json={"data": []})
+                    transport_cls = httpx.AsyncClient if is_async else httpx.Client
+                    client._client = transport_cls(base_url=client.base_url, transport=httpx.MockTransport(handler))
+                    try:
+                        for quality in ("xhigh", "max"):
+                            payload = {"model": model, "prompt": "中" * 2000, "quality": quality, "output_format": "png"}
+                            run(client.generate_image(payload))
+                            self.assertEqual(json.loads(requests[-1].content), payload)
+                            files = [("image[]", ("test.png", b"png-data", "image/png"))] * 2
+                            run(client.edit_image(dict(payload, input_fidelity="high"), files))
+                            request = requests[-1]
+                            self.assertFalse(request.url.query)
+                            self.assertIn("multipart/form-data", request.headers["content-type"])
+                            self.assertIn(payload["prompt"].encode(), request.content)
+                            self.assertIn(model.encode(), request.content)
+                            self.assertEqual(request.content.count(b'name="image";'), 2)
+                            self.assertNotIn(b'response_format', request.content)
+                            self.assertNotIn(b'input_fidelity', request.content)
+                        for method in (client.generate_image, lambda data: client.edit_image(data, files)):
+                            with self.assertRaisesRegex(ValueError, "png or jpeg"):
+                                run(method(dict(payload, output_format="webp")))
+                            with self.assertRaisesRegex(ValueError, "requires PNG"):
+                                run(method(dict(payload, output_format="jpeg", background="transparent")))
+                        with self.assertRaisesRegex(ValueError, "1 to 16"):
+                            run(client.edit_image(payload, files * 9))
+                    finally:
+                        run(client.close())
 
     def test_read_error_message_names_interrupted_connection(self):
         client = client_module.Client(

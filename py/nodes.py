@@ -374,16 +374,26 @@ def _build_response_json(response_payload, cost_estimate=None):
 
 def _format_cost_summary(cost_estimate):
     tokens = cost_estimate["tokens"]
-    return (
+    summary = (
         f"本次费用（预估）：${cost_estimate['estimated_total_usd']:.6f}\n"
         f"文本输入 {tokens['text_input']:,} · 图片输入 {tokens['image_input']:,} · "
         f"图片输出 {tokens['image_output']:,} tokens"
     )
+    if cost_estimate["cache_pricing"] == "reported_breakdown":
+        summary += (
+            f"\n缓存文本输入 {tokens['cached_text_input']:,} · "
+            f"缓存图片输入 {tokens['cached_image_input']:,} tokens"
+        )
+    else:
+        summary += "\n未提供有效缓存明细，按未缓存价格估算"
+    return summary
 
 
 def _build_node_result(response_payload, image_output, api_provider, model_name):
     cost_estimate = None
-    if api_provider == API_PROVIDER_VAPEUR and str(model_name).strip().lower() == "gpt-image-2":
+    if api_provider == API_PROVIDER_VAPEUR and str(model_name).strip().lower() in (
+        "gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"
+    ):
         cost_estimate = estimate_vapeur_gpt_image_2_cost(response_payload)
 
     result = (image_output, _build_response_json(response_payload, cost_estimate))

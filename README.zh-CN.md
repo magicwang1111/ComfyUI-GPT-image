@@ -140,7 +140,7 @@ set GPT_IMAGE_API_PROVIDER=openai
 
 将 `api_provider` 切换为 `vapeur` 后，即使配置中仍保留旧 Azure 的 `api_key` 和 `base_url`，节点也会优先使用 `VAPEUR_API_KEY` 和 `https://api.vapeur.ai/v1`。
 
-Vapeur 图片编辑请求会按其 OpenAPI 规范把编辑参数放入 URL query，并使用重复的 `image` multipart 字段上传图片。该接口未列出 `input_fidelity`，因此 Vapeur 后端不会发送此字段。
+Vapeur 支持选择 `gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst`，质量可用 `auto`、`low`、`medium`、`high`、`xhigh`、`max`。文生图使用 JSON；图片编辑将参数放入 multipart 表单，并使用重复的 `image` 字段上传 1–16 张参考图，不发送 `input_fidelity` 或 `response_format`。编辑提示词不再受 URL 长度限制。输出仅支持 PNG/JPEG，透明背景须使用 PNG。切换后清空节点的 `model_override`，避免继续使用旧 Azure 部署名；代码更新后重启 ComfyUI 并刷新页面。
 
 ```json
 {
@@ -252,7 +252,7 @@ set GPT_IMAGE_API_PROVIDER=vapeur
 
 `response_json` 会保留调试结构，但会把 `b64_json` 替换成占位文本，避免日志过大。
 
-当 Vapeur 为 `gpt-image-2` 返回 `usage` 时，节点还会：
+当 Vapeur 为 `gpt-image-2`、`gpt-image-2.5-flare` 或 `gpt-image-2.5-sunburst` 返回完整 token 用量时，节点还会：
 
 - 在执行完成后于节点底部显示预估美元费用
 - 在 `response_json` 中加入 `cost_estimate` 费用明细
@@ -307,3 +307,5 @@ python scripts/probe_aihubmix_capabilities.py --api-provider relay --base-url ht
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+GPT Image 2.5 费用采用用户提供的 Vapeur 价格截图：文本输入 $5、缓存文本输入 $1.25、图片输入 $8、缓存图片输入 $2、图片输出 $30（每百万 tokens）。缓存折扣读取 `usage.input_tokens_details.cached_tokens_details` 中完整且有效的 `text_tokens` / `image_tokens`，从输入总量扣除缓存部分后分别计费；该字段结构尚未通过真实 Vapeur 出图响应核实。缺少有效缓存明细时明确提示按未缓存价格估算；缺少输入分类用量时不生成费用估算。

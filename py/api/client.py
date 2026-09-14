@@ -9,7 +9,6 @@ from .exceptions import GPTImageAPIError
 DEFAULT_MAX_RETRIES = 1
 DEFAULT_RETRY_DELAY = 2.0
 LOG_PREFIX = "[ComfyUI-GPT-image]"
-VAPEUR_MAX_REQUEST_TARGET_BYTES = 7800
 
 
 def _build_timeout_config(timeout):
@@ -46,15 +45,11 @@ def _normalize_optional_header(value):
     return str(value).strip()
 
 
-def _validate_vapeur_edit_query_length(base_url, params):
-    request = httpx.Request("POST", f"{base_url}/images/edits", params=params)
-    request_target_bytes = len(request.url.raw_path)
-    if request_target_bytes > VAPEUR_MAX_REQUEST_TARGET_BYTES:
-        raise ValueError(
-            "Vapeur 图片编辑提示词过长：编码后的请求 URL 为 "
-            f"{request_target_bytes} 字节，安全上限为 {VAPEUR_MAX_REQUEST_TARGET_BYTES} 字节。"
-            "请缩短 prompt（中文、特殊字符和 Emoji 会占用更多空间）后重试。"
-        )
+def _validate_vapeur_payload(payload):
+    if payload.get("output_format", "png") not in ("png", "jpeg"):
+        raise ValueError("Vapeur output_format must be png or jpeg.")
+    if payload.get("background") == "transparent" and payload.get("output_format", "png") != "png":
+        raise ValueError("Vapeur transparent background requires PNG output.")
 
 
 def _is_retryable_http_error(exc):
@@ -228,15 +223,17 @@ class Client:
         return response.json()
 
     def generate_image(self, payload):
+        if self.api_provider == API_PROVIDER_VAPEUR:
+            _validate_vapeur_payload(payload)
         return self.request("POST", "/images/generations", json=payload)
 
     def edit_image(self, data, files):
         if self.api_provider == API_PROVIDER_VAPEUR:
-            params = {key: value for key, value in data.items() if key != "input_fidelity"}
-            params["response_format"] = "b64_json"
-            _validate_vapeur_edit_query_length(self.base_url, params)
+            _validate_vapeur_payload(data)
+            if not 1 <= len(files) <= 16:
+                raise ValueError("Vapeur image editing requires 1 to 16 reference images.")
+            data = {key: value for key, value in data.items() if key not in ("input_fidelity", "response_format")}
             files = [("image" if name == "image[]" else name, payload) for name, payload in files]
-            return self.request("POST", "/images/edits", params=params, files=files)
         return self.request("POST", "/images/edits", data=data, files=files)
 
     def close(self):
@@ -298,15 +295,17 @@ class AsyncClient:
         return response.json()
 
     async def generate_image(self, payload):
+        if self.api_provider == API_PROVIDER_VAPEUR:
+            _validate_vapeur_payload(payload)
         return await self.request("POST", "/images/generations", json=payload)
 
     async def edit_image(self, data, files):
         if self.api_provider == API_PROVIDER_VAPEUR:
-            params = {key: value for key, value in data.items() if key != "input_fidelity"}
-            params["response_format"] = "b64_json"
-            _validate_vapeur_edit_query_length(self.base_url, params)
+            _validate_vapeur_payload(data)
+            if not 1 <= len(files) <= 16:
+                raise ValueError("Vapeur image editing requires 1 to 16 reference images.")
+            data = {key: value for key, value in data.items() if key not in ("input_fidelity", "response_format")}
             files = [("image" if name == "image[]" else name, payload) for name, payload in files]
-            return await self.request("POST", "/images/edits", params=params, files=files)
         return await self.request("POST", "/images/edits", data=data, files=files)
 
     async def close(self):

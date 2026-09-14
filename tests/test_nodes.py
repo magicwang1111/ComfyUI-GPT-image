@@ -165,6 +165,28 @@ class NodeExecutionTests(unittest.TestCase):
         self.assertEqual(client.generate_calls[0]["size"], "2048x1536")
         self.assertTrue(client.closed)
 
+    def test_vapeur_25_cost_for_generation_and_edit(self):
+        import torch
+
+        for model in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst"):
+            for edit in (False, True):
+                with self.subTest(model=model, edit=edit):
+                    usage = {"input_tokens_details": {
+                        "text_tokens": 1000, "image_tokens": 2000,
+                        "cached_tokens_details": {"text_tokens": 400, "image_tokens": 500},
+                    }, "output_tokens_details": {"image_tokens": 3000}}
+                    client = FakeAsyncClient(usage=usage)
+                    with patch.object(nodes, "_create_runtime_async_client", return_value=client):
+                        kwargs = {"prompt": "test", "model": model}
+                        node = nodes.GPTImageEditNode() if edit else nodes.GPTImageGenerateNode()
+                        if edit:
+                            kwargs["images"] = torch.zeros((1, 8, 8, 3))
+                        result = asyncio.run(node.generate(**kwargs))
+                    estimate = json.loads(result["result"][1])["cost_estimate"]
+                    self.assertAlmostEqual(estimate["estimated_total_usd"], 0.1065)
+                    self.assertIn("$0.106500", result["ui"]["gpt_image_cost"][0])
+                    self.assertIn("缓存文本输入 400", result["ui"]["gpt_image_cost"][0])
+
     def test_generate_node_returns_vapeur_cost_ui_and_response_breakdown(self):
         usage = {
             "input_tokens": 972,
@@ -185,7 +207,7 @@ class NodeExecutionTests(unittest.TestCase):
 
         self.assertEqual(
             node_result["ui"]["gpt_image_cost"],
-            ["本次费用（预估）：$0.013620\n文本输入 12 · 图片输入 960 · 图片输出 196 tokens"],
+            ["本次费用（预估）：$0.013620\n文本输入 12 · 图片输入 960 · 图片输出 196 tokens\n未提供有效缓存明细，按未缓存价格估算"],
         )
         response_payload = json.loads(node_result["result"][1])
         self.assertAlmostEqual(response_payload["cost_estimate"]["estimated_total_usd"], 0.01362)

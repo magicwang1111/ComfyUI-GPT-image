@@ -19,6 +19,8 @@ VAPEUR_GPT_IMAGE_2_RATES_USD_PER_MILLION = {
     "text_input": 5.0,
     "image_input": 8.0,
     "image_output": 30.0,
+    "cached_text_input": 1.25,
+    "cached_image_input": 2.0,
 }
 
 
@@ -166,6 +168,20 @@ def estimate_vapeur_gpt_image_2_cost(response_payload):
         "image_input": image_input_tokens,
         "image_output": image_output_tokens,
     }
+    cached_details = input_details.get("cached_tokens_details")
+    cached_details = cached_details if isinstance(cached_details, dict) else {}
+    cached_text = _nonnegative_token_count(cached_details.get("text_tokens"))
+    cached_image = _nonnegative_token_count(cached_details.get("image_tokens"))
+    cache_breakdown_available = (
+        cached_text is not None and cached_image is not None
+        and cached_text <= text_input_tokens and cached_image <= image_input_tokens
+    )
+    if cache_breakdown_available:
+        token_counts["text_input"] -= cached_text
+        token_counts["image_input"] -= cached_image
+        token_counts["cached_text_input"] = cached_text
+        token_counts["cached_image_input"] = cached_image
+
     breakdown_usd = {
         key: tokens * VAPEUR_GPT_IMAGE_2_RATES_USD_PER_MILLION[key] / 1_000_000
         for key, tokens in token_counts.items()
@@ -173,6 +189,7 @@ def estimate_vapeur_gpt_image_2_cost(response_payload):
 
     return {
         "currency": "USD",
+        "cache_pricing": "reported_breakdown" if cache_breakdown_available else "uncached_estimate",
         "estimated_total_usd": sum(breakdown_usd.values()),
         "tokens": token_counts,
         "breakdown_usd": breakdown_usd,

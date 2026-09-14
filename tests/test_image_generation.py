@@ -109,6 +109,17 @@ class ImageGenerationTests(unittest.TestCase):
         self.assertAlmostEqual(estimate["breakdown_usd"]["image_input"], 0.00768)
         self.assertAlmostEqual(estimate["breakdown_usd"]["image_output"], 0.00588)
 
+    def test_cache_missing_partial_or_invalid_uses_uncached_estimate(self):
+        for cached in (None, {"text_tokens": 400}, {"text_tokens": 1001, "image_tokens": 0}, {"text_tokens": -1, "image_tokens": 0}):
+            with self.subTest(cached=cached):
+                estimate = image_generation.estimate_vapeur_gpt_image_2_cost({"usage": {
+                    "input_tokens_details": {"text_tokens": 1000, "image_tokens": 2000,
+                                             "cached_tokens_details": cached},
+                    "output_tokens": 3000,
+                }})
+                self.assertAlmostEqual(estimate["estimated_total_usd"], 0.111)
+                self.assertEqual(estimate["cache_pricing"], "uncached_estimate")
+
     def test_estimate_vapeur_cost_requires_complete_modality_breakdown(self):
         payload = {
             "usage": {

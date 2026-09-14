@@ -167,7 +167,7 @@ For Azure, the node request `model` must be your Azure deployment name, for exam
 
 Set `api_provider` to `vapeur`. This selects `VAPEUR_API_KEY` and the VapeurAI default base URL even if legacy Azure values remain in `api_key` and `base_url`.
 
-For image edits, the Vapeur backend sends edit options as query parameters and uploads repeated `image` multipart fields, matching VapeurAI's OpenAPI schema. `input_fidelity` is omitted because it is not listed by that endpoint.
+Vapeur supports `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst` with `auto`, `low`, `medium`, `high`, `xhigh`, and `max` quality. Generation uses JSON; edits send options in the multipart body with 1–16 repeated `image` fields, omitting `input_fidelity` and `response_format`. Edit prompts are no longer constrained by URL length. Output must be PNG or JPEG; transparent backgrounds require PNG. Clear `model_override` when switching from an Azure deployment. Restart ComfyUI and refresh the page after updating the code.
 
 ```json
 {
@@ -279,7 +279,7 @@ For `Generate` with no input image:
 
 `response_json` keeps the response structure for debugging, but replaces `b64_json` with a placeholder so logs do not explode in size.
 
-When Vapeur returns `usage` for `gpt-image-2`, the node also:
+When Vapeur returns complete token usage for `gpt-image-2`, `gpt-image-2.5-flare`, or `gpt-image-2.5-sunburst`, the node also:
 
 - displays the estimated USD cost below the node after execution
 - adds a `cost_estimate` breakdown to `response_json`
@@ -334,3 +334,5 @@ This only proves the relay supported at least 24 input images at that time. It d
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+GPT Image 2.5 rates follow the supplied Vapeur screenshots: text input $5, cached text $1.25, image input $8, cached image $2, image output $30 per million tokens. Cache discounts use complete, valid `text_tokens` and `image_tokens` under `usage.input_tokens_details.cached_tokens_details`, subtracting cached counts from input totals before pricing. This cache response shape has not been verified against a live Vapeur generation. Missing or invalid cache details are explicitly labeled as an uncached estimate; missing input modality counts produce no estimate.
