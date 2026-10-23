@@ -355,12 +355,12 @@ def _create_runtime_async_client():
 def _raise_with_api_guidance(exc):
     if exc.status_code in {401, 403}:
         raise ValueError(
-            f"API request was rejected with {exc.status_code}. Check api_key, base_url, api_provider, "
+            f"{exc} Check api_key, base_url, api_provider, "
             "OpenAI organization/project headers, billing, and model access."
         ) from exc
 
     if exc.status_code == 429:
-        raise ValueError("API rate limit exceeded (429). Wait and retry, or use a project with higher quota.") from exc
+        raise ValueError(f"{exc} Check billing/quota or request rate according to the API error above.") from exc
 
     raise ValueError(str(exc)) from exc
 

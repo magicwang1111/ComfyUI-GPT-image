@@ -5,6 +5,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+import httpx
 import PIL.Image
 
 from _loader import ensure_package_loaded, import_module
@@ -58,6 +59,22 @@ class FakeAsyncClient:
 
 
 class NodeExecutionTests(unittest.TestCase):
+    def test_api_guidance_preserves_billing_and_permission_reasons(self):
+        for status, code, message in (
+            (403, "insufficient_balance", "Insufficient balance"),
+            (403, "account_overdue", "Forbidden"),
+            (403, "permission_denied", "Model access denied"),
+            (429, "insufficient_quota", "Quota exhausted"),
+        ):
+            with self.subTest(status=status, code=code):
+                error = nodes.GPTImageAPIError.from_response(httpx.Response(
+                    status, json={"error": {"code": code, "message": message}}
+                ))
+                with self.assertRaises(ValueError) as caught:
+                    nodes._raise_with_api_guidance(error)
+                self.assertIn(code, str(caught.exception))
+                self.assertIn(message, str(caught.exception))
+
     def test_azure_25_omits_fidelity_but_other_models_and_providers_preserve_it(self):
         import torch
 

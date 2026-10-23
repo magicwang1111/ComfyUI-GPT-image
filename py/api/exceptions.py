@@ -10,7 +10,8 @@ class GPTImageAPIError(Exception):
 
     def _format_message(self):
         type_label = f" {self.error_type}" if self.error_type else ""
-        return f"API request failed ({self.status_code}{type_label}): {self.message}"
+        code_label = f" [{self.code}]" if self.code else ""
+        return f"API request failed ({self.status_code}{type_label}){code_label}: {self.message}"
 
     @classmethod
     def from_response(cls, response):
