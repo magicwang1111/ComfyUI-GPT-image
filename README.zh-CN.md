@@ -140,6 +140,8 @@ set GPT_IMAGE_API_PROVIDER=openai
 
 将 `api_provider` 切换为 `vapeur` 后，即使配置中仍保留旧 Azure 的 `api_key` 和 `base_url`，节点也会优先使用 `VAPEUR_API_KEY` 和 `https://api.vapeur.ai/v1`。
 
+原入口连接失败或连接超时时，自动向 `https://apiv2.vapeur.ai/v1` 回退一次，保留参数与上传内容。HTTP 错误和连接建立后的读取错误不触发入口切换；每次新请求仍优先使用原入口。
+
 Vapeur 支持选择 `gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst`，质量可用 `auto`、`low`、`medium`、`high`、`xhigh`、`max`。文生图使用 JSON；图片编辑将参数放入 multipart 表单，并使用重复的 `image` 字段上传 1–16 张参考图，不发送 `input_fidelity` 或 `response_format`。编辑提示词不再受 URL 长度限制。输出仅支持 PNG/JPEG，透明背景须使用 PNG。切换后清空节点的 `model_override`，避免继续使用旧 Azure 部署名；代码更新后重启 ComfyUI 并刷新页面。
 
 ```json

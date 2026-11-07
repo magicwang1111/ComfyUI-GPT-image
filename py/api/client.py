@@ -5,6 +5,7 @@ import httpx
 
 from .capabilities import API_PROVIDER_VAPEUR, DEFAULT_API_PROVIDER, DEFAULT_BASE_URL
 from .exceptions import GPTImageAPIError
+from .fallback import VapeurAsyncClient, VapeurClient
 
 DEFAULT_MAX_RETRIES = 1
 DEFAULT_RETRY_DELAY = 2.0
@@ -193,7 +194,7 @@ class Client:
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
         timeout_config = _build_timeout_config(timeout)
-        self._client = httpx.Client(
+        self._client = VapeurClient(
             base_url=self.base_url,
             timeout=timeout_config,
             headers=_build_headers(self.api_key, organization=self.organization, project=self.project),
@@ -265,7 +266,7 @@ class AsyncClient:
         self.max_retries = max(0, int(max_retries))
         self.retry_delay = max(0.0, float(retry_delay))
         timeout_config = _build_timeout_config(timeout)
-        self._client = httpx.AsyncClient(
+        self._client = VapeurAsyncClient(
             base_url=self.base_url,
             timeout=timeout_config,
             headers=_build_headers(self.api_key, organization=self.organization, project=self.project),
